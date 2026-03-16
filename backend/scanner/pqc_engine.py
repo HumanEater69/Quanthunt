@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+from ..models import APIInfo, TLSInfo
+
+
+WEIGHT = {"CRITICAL": 100, "WARNING": 50, "ACCEPTABLE": 20, "SAFE": 0}
+
+
+def classify_key_exchange(cipher: str | None, tls_version: str | None = None) -> str:
+    c = (cipher or "").upper()
+    v = (tls_version or "").upper()
+    if any(x in c for x in ["MLKEM", "KYBER"]):
+        return "SAFE"
+    if "X25519" in c and any(x in c for x in ["MLKEM", "KYBER"]):
+        return "ACCEPTABLE"
+    if "TLS_RSA" in c or "_RSA_" in c:
+        return "CRITICAL"
+    if any(x in c for x in ["ECDHE", "DHE", "ECDH", "X25519", "X448"]):
+        return "WARNING"
+    # TLS 1.3 suites no longer encode key exchange in the cipher name.
+    # Treat modern TLS with unknown KEX details as transitional, not critical-by-default.
+    if "1.3" in v:
+        return "WARNING"
+    if "1.0" in v or "1.1" in v:
+        return "CRITICAL"
+    return "WARNING"
+
+
+def classify_auth(tls: TLSInfo, api: APIInfo) -> str:
+    sig = (tls.cert_sig_algo or "").upper()
+    if any(a in sig for a in ["MLDSA", "DILITHIUM", "SLHDSA", "SPHINCS"]):
+        return "SAFE"
+    if any(a in sig for a in ["RSA", "ECDSA", "DSA", "EDDSA", "ED25519"]):
+        return "CRITICAL"
+    if any(jwt in {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"} for jwt in api.jwt_algorithms):
+        return "CRITICAL"
+    return "WARNING"
+
+
+def classify_tls_version(version: str | None) -> str:
+    v = (version or "").upper()
+    if "1.0" in v or "1.1" in v:
+        return "CRITICAL"
+    if "1.2" in v:
+        return "WARNING"
+    if "1.3" in v:
+        return "ACCEPTABLE"
+    return "WARNING"
+
+
+def classify_cert_algo(tls: TLSInfo) -> str:
+    sig = (tls.cert_sig_algo or "").upper()
+    if any(x in sig for x in ["MD5", "SHA1"]):
+        return "CRITICAL"
+    if "SHA256" in sig:
+        return "WARNING"
+    if any(x in sig for x in ["SHA384", "SHA512"]):
+        return "ACCEPTABLE"
+    if any(x in sig for x in ["DILITHIUM", "SLHDSA", "SPHINCS"]):
+        return "SAFE"
+    return "WARNING"
+
+
+def classify_symmetric(cipher: str | None) -> str:
+    c = (cipher or "").upper()
+    if "3DES" in c:
+        return "CRITICAL"
+    if "AES_128" in c or "AES128" in c:
+        return "WARNING"
+    if any(x in c for x in ["AES_256", "AES256", "CHACHA20"]):
+        return "ACCEPTABLE"
+    return "WARNING"
+
+
+def hndl_score(key_exchange: str, auth: str, tls_version: str, cert_algo: str, symmetric: str) -> float:
+    score = (
+        WEIGHT[key_exchange] * 0.45
+        + WEIGHT[auth] * 0.25
+        + WEIGHT[tls_version] * 0.15
+        + WEIGHT[cert_algo] * 0.10
+        + WEIGHT[symmetric] * 0.05
+    )
+    return round(score, 2)
+
+
+def label_for_score(score: float) -> str:
+    if score <= 60:
+        return "Transitioning"
+    if score <= 80:
+        return "Quantum-Safe"
+    return "CRITICAL EXPOSURE"
+
+
+def recommendations_for_status(score: float) -> list[str]:
+    recs = [
+        "Enable TLS 1.3 across all internet-facing services.",
+        "Prioritize hybrid X25519+ML-KEM support for key establishment.",
+        "Replace RSA/ECDSA JWT signing with NIST-standard PQC signatures when supported.",
+    ]
+    if score > 80:
+        recs.insert(0, "Treat this asset as HNDL exposed and rotate long-term secrets aggressively.")
+    return recs

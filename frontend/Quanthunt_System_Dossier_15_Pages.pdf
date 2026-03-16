@@ -1,0 +1,1093 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 15 /Kids [ 4 0 R 5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R 13 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R ] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 19 0 R >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 20 0 R >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 21 0 R >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 22 0 R >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 23 0 R >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 24 0 R >>
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 25 0 R >>
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 26 0 R >>
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 27 0 R >>
+endobj
+13 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 28 0 R >>
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 29 0 R >>
+endobj
+15 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 30 0 R >>
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 31 0 R >>
+endobj
+17 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 32 0 R >>
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 33 0 R >>
+endobj
+19 0 obj
+<< /Length 2005 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Quanthunt System Dossier) Tj
+/F1 10 Tf
+0 -24 Td
+(Document type: Full technical and product dossier generated from the current application) Tj
+0 -14 Td
+(codebase.) Tj
+0 -14 Td
+0 -8 Td
+(Target length: 15 pages. Scope: architecture, logic, technology stack, workflows, APIs, data) Tj
+0 -14 Td
+(model, analytics, security controls, and operational plan.) Tj
+0 -14 Td
+0 -8 Td
+(Product identity: Quanthunt is a bank-focused cyber-risk intelligence platform for post-quantum) Tj
+0 -14 Td
+(cryptography readiness.) Tj
+0 -14 Td
+0 -8 Td
+(Primary mission: Discover external assets, evaluate cryptographic posture, calculate HNDL risk,) Tj
+0 -14 Td
+(and produce migration artifacts including CBOM, roadmap, and certification outputs.) Tj
+0 -14 Td
+0 -8 Td
+(Runtime model: FastAPI service with optional Celery worker execution, SQLite persistence, and) Tj
+0 -14 Td
+(React dashboard frontend.) Tj
+0 -14 Td
+0 -8 Td
+(Audience: Engineering reviewers, security assessors, hackathon judges, and deployment) Tj
+0 -14 Td
+(stakeholders.) Tj
+0 -14 Td
+0 -8 Td
+(Generated on: 2026-03-12 16:51:42 +05:30) Tj
+0 -14 Td
+0 -8 Td
+(Core deliverables covered in this dossier: domain scanner logic, cryptographic analysis classes,) Tj
+0 -14 Td
+(weighted HNDL model, persistence design, chain-block audit proof, assistant fallback behavior,) Tj
+0 -14 Td
+(and deployment guidance.) Tj
+0 -14 Td
+0 -8 Td
+(Data sensitivity note: the platform evaluates internet-facing domain assets and captures) Tj
+0 -14 Td
+(metadata for posture scoring; no private key material is ingested by design.) Tj
+0 -14 Td
+0 -8 Td
+(Operational mode note: system includes both deterministic offline response paths and optional) Tj
+0 -14 Td
+(live model integrations for recommendation quality and assistant support.) Tj
+0 -14 Td
+0 -8 Td
+(Governance note: domain intake is constrained to an explicit allow-list of Indian banking) Tj
+0 -14 Td
+(domains in the backend request layer.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 1 of 15) Tj
+ET
+
+endstream
+endobj
+20 0 obj
+<< /Length 1399 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Table of Contents) Tj
+/F1 10 Tf
+0 -24 Td
+(1. Quanthunt System Dossier \\(Cover and Scope\\)) Tj
+0 -14 Td
+0 -8 Td
+(2. Table of Contents) Tj
+0 -14 Td
+0 -8 Td
+(3. Executive Summary and Product Positioning) Tj
+0 -14 Td
+0 -8 Td
+(4. Problem Statement, Objectives, and Functional Scope) Tj
+0 -14 Td
+0 -8 Td
+(5. High-Level Architecture and Runtime Topology) Tj
+0 -14 Td
+0 -8 Td
+(6. Backend Service Architecture \\(FastAPI and Orchestration\\)) Tj
+0 -14 Td
+0 -8 Td
+(7. Scanner Pipeline Deep Dive \\(Discovery -> TLS/API -> Findings\\)) Tj
+0 -14 Td
+0 -8 Td
+(8. HNDL Risk Model, PQC Classification Logic, and Label Rules) Tj
+0 -14 Td
+0 -8 Td
+(9. Persistence and Data Model \\(SQL Tables and Audit Chain\\)) Tj
+0 -14 Td
+0 -8 Td
+(10. API Contract and Endpoint Behaviors) Tj
+0 -14 Td
+0 -8 Td
+(11. Frontend Architecture and Module Responsibilities) Tj
+0 -14 Td
+0 -8 Td
+(12. Analytics and Visualization Logic \\(Area/Bar/Radar/Fallback\\)) Tj
+0 -14 Td
+0 -8 Td
+(13. Security Controls, Trust Features, and Failure Handling) Tj
+0 -14 Td
+0 -8 Td
+(14. Omega Assistant Logic, Context Wiring, and Offline Mode) Tj
+0 -14 Td
+0 -8 Td
+(15. Deployment, Operations, Demo Runbook, and Roadmap) Tj
+0 -14 Td
+0 -8 Td
+(All sections are derived from code paths in backend and frontend modules currently present in) Tj
+0 -14 Td
+(the workspace.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 2 of 15) Tj
+ET
+
+endstream
+endobj
+21 0 obj
+<< /Length 2023 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Executive Summary) Tj
+/F1 10 Tf
+0 -24 Td
+(Quanthunt provides a practical, bank-focused workflow to evaluate quantum-era cryptographic) Tj
+0 -14 Td
+(transition readiness.) Tj
+0 -14 Td
+0 -8 Td
+(The system starts from a permitted domain, discovers reachable assets, inspects live transport) Tj
+0 -14 Td
+(and application metadata, and converts technical findings into a weighted risk score \\(HNDL\\).) Tj
+0 -14 Td
+0 -8 Td
+(Output artifacts are built for both engineering action and stakeholder reporting: per-asset) Tj
+0 -14 Td
+(findings, phased recommendations, CycloneDX CBOM exports, PDF report, and readiness certificate) Tj
+0 -14 Td
+(for qualifying postures.) Tj
+0 -14 Td
+0 -8 Td
+(The platform implements clear guardrails: strict bank-domain allow-listing, explicit scan status) Tj
+0 -14 Td
+(progression, robust logging, and deterministic fallback paths when live AI services are) Tj
+0 -14 Td
+(unavailable.) Tj
+0 -14 Td
+0 -8 Td
+(A chain-block mechanism anchors completed scan summaries with SHA-256 proof-of-work fields) Tj
+0 -14 Td
+(\\(payload hash, previous hash, nonce, difficulty\\) for tamper-evidence style audit signaling.) Tj
+0 -14 Td
+0 -8 Td
+(Frontend design exposes operational and analytical views through dedicated tabs: scanner) Tj
+0 -14 Td
+(execution, asset map, crypto findings, CBOM mapping, roadmap phases, leaderboard intelligence,) Tj
+0 -14 Td
+(and bank comparison studio.) Tj
+0 -14 Td
+0 -8 Td
+(Assistant behavior is production-aware: live model path when key is available, otherwise) Tj
+0 -14 Td
+(user-visible offline mode with intent-driven deterministic responses.) Tj
+0 -14 Td
+0 -8 Td
+(The current build is suitable for demonstration and judged evaluation because it directly maps) Tj
+0 -14 Td
+(technical scan outcomes to standards language and decision artifacts.) Tj
+0 -14 Td
+0 -8 Td
+(Scalability path is present through optional Celery + Redis execution without changing core API) Tj
+0 -14 Td
+(contract.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 3 of 15) Tj
+ET
+
+endstream
+endobj
+22 0 obj
+<< /Length 1787 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Problem Statement and Objectives) Tj
+/F1 10 Tf
+0 -24 Td
+(Problem context: financial institutions rely on long-lived cryptographic controls that must) Tj
+0 -14 Td
+(transition safely under post-quantum risk assumptions.) Tj
+0 -14 Td
+0 -8 Td
+(Operational challenge: teams need visibility into external crypto posture, repeatable scoring,) Tj
+0 -14 Td
+(and migration actions that are understandable to both engineers and governance stakeholders.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 1: Discover domain-adjacent assets quickly from public signals and DNS evidence.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 2: Inspect transport and API-surface indicators that materially impact cryptographic) Tj
+0 -14 Td
+(resilience.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 3: Convert heterogeneous technical observations into a weighted composite score that) Tj
+0 -14 Td
+(can be ranked and trended.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 4: Persist complete scan context for replay, comparison, reporting, and audit) Tj
+0 -14 Td
+(anchoring.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 5: Produce standards-linked outputs: CBOM structure, NIST PQC reference mapping, and) Tj
+0 -14 Td
+(readiness labels.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 6: Offer clear remediation guidance phased for execution planning.) Tj
+0 -14 Td
+0 -8 Td
+(Objective 7: Ensure graceful degradation in AI-assisted paths via deterministic fallback mode.) Tj
+0 -14 Td
+0 -8 Td
+(Scope boundaries in code: only configured Indian bank domains are accepted; unsupported domains) Tj
+0 -14 Td
+(fail request validation.) Tj
+0 -14 Td
+0 -8 Td
+(Non-goal in current MVP: direct cryptographic protocol mutation or active exploit behavior; the) Tj
+0 -14 Td
+(platform is posture analysis and guidance focused.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 4 of 15) Tj
+ET
+
+endstream
+endobj
+23 0 obj
+<< /Length 1775 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(High-Level Architecture) Tj
+/F1 10 Tf
+0 -24 Td
+(Entry layer: FastAPI app serves both API endpoints and static frontend assets.) Tj
+0 -14 Td
+0 -8 Td
+(Validation layer: incoming scan requests normalize domains and enforce a strict allow-list) Tj
+0 -14 Td
+(before any scan orchestration.) Tj
+0 -14 Td
+0 -8 Td
+(Orchestration layer: scan jobs execute in async mode or optional Celery worker mode based on) Tj
+0 -14 Td
+(USE_CELERY flag.) Tj
+0 -14 Td
+0 -8 Td
+(Pipeline stages: discovery -> per-asset TLS/API inspection -> PQC classification -> persistence) Tj
+0 -14 Td
+(of findings and recommendations -> CBOM generation -> chain-block append -> completion state.) Tj
+0 -14 Td
+0 -8 Td
+(Persistence layer: SQLAlchemy models store scans, logs, assets, findings, roadmap items, CBOM) Tj
+0 -14 Td
+(exports, and chain blocks.) Tj
+0 -14 Td
+0 -8 Td
+(Artifact layer: report PDF and readiness certificate endpoints derive outputs from stored scan) Tj
+0 -14 Td
+(payloads.) Tj
+0 -14 Td
+0 -8 Td
+(Presentation layer: React dashboard consumes backend APIs and renders operational execution) Tj
+0 -14 Td
+(state plus analytics dashboards.) Tj
+0 -14 Td
+0 -8 Td
+(Assistant layer: floating Omega assistant consumes leaderboard context and calls backend chat) Tj
+0 -14 Td
+(endpoint with source/focus controls.) Tj
+0 -14 Td
+0 -8 Td
+(Resilience layer: offline deterministic assistant path and robust endpoint-level conflict) Tj
+0 -14 Td
+(responses when artifacts are not yet ready.) Tj
+0 -14 Td
+0 -8 Td
+(Trust layer: chain block schema links each scan summary to a hash chain root plus PoW metadata.) Tj
+0 -14 Td
+0 -8 Td
+(Static delivery: index.html mounts app.jsx and styles.css via cache-versioned static URLs.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 5 of 15) Tj
+ET
+
+endstream
+endobj
+24 0 obj
+<< /Length 1790 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Backend Service Architecture) Tj
+/F1 10 Tf
+0 -24 Td
+(Core framework is FastAPI with CORS enabled for open-origin frontend access in this deployment) Tj
+0 -14 Td
+(profile.) Tj
+0 -14 Td
+0 -8 Td
+(Startup behavior auto-creates SQL schema from declarative models.) Tj
+0 -14 Td
+0 -8 Td
+(Routes include scan creation, scan retrieval, scan listing, findings, CBOM JSON export, report) Tj
+0 -14 Td
+(PDF, readiness certificate PDF, batch submission, leaderboard, and assistant chat.) Tj
+0 -14 Td
+0 -8 Td
+(Domain controls: _normalize_domain strips scheme/path/port; _is_allowed_bank_domain enforces) Tj
+0 -14 Td
+(root/subdomain policy against curated list.) Tj
+0 -14 Td
+0 -8 Td
+(Scan create behavior: DB row inserted with queued status, then pipeline scheduled immediately in) Tj
+0 -14 Td
+(asyncio or enqueued in Celery.) Tj
+0 -14 Td
+0 -8 Td
+(Batch behavior validates all domains first; fails fast with invalid list if any non-permitted) Tj
+0 -14 Td
+(domain is present.) Tj
+0 -14 Td
+0 -8 Td
+(Artifact endpoints enforce readiness checks: CBOM and report require completed content;) Tj
+0 -14 Td
+(certificate requires qualifying label.) Tj
+0 -14 Td
+0 -8 Td
+(Leaderboard endpoint aggregates average risk per scan from stored asset rows and returns sorted) Tj
+0 -14 Td
+(output.) Tj
+0 -14 Td
+0 -8 Td
+(Session handling uses context manager with commit/rollback discipline for transactional) Tj
+0 -14 Td
+(integrity.) Tj
+0 -14 Td
+0 -8 Td
+(Optional worker mode available through dedicated Celery app configured with Redis) Tj
+0 -14 Td
+(broker/backend.) Tj
+0 -14 Td
+0 -8 Td
+(Assistant endpoint supports two route aliases and returns structured metadata including source,) Tj
+0 -14 Td
+(offline status, reason, and intent.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 6 of 15) Tj
+ET
+
+endstream
+endobj
+25 0 obj
+<< /Length 1971 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Scanner Pipeline Deep Dive) Tj
+/F1 10 Tf
+0 -24 Td
+(Stage 1 discovery: seed with base domain, enrich with crt.sh certificate transparency hostnames,) Tj
+0 -14 Td
+(and augment with DNS brute-force on common banking-relevant prefixes.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 2 parallel inspection per asset: TLS inspection and API analysis are launched concurrently) Tj
+0 -14 Td
+(using asyncio.to_thread wrappers.) Tj
+0 -14 Td
+0 -8 Td
+(TLS inspection captures version, primary cipher, cert metadata, and selected web headers \\(e.g.,) Tj
+0 -14 Td
+(HSTS\\) where retrievable.) Tj
+0 -14 Td
+0 -8 Td
+(API analysis probes common service ports, inspects response text for JWT header algorithms, and) Tj
+0 -14 Td
+(records security/framework hints from headers.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 3 classification: each asset receives five category statuses \\(key exchange,) Tj
+0 -14 Td
+(authentication, TLS version, certificate algorithm, symmetric algorithm\\).) Tj
+0 -14 Td
+0 -8 Td
+(Stage 4 scoring and labeling: HNDL weighted score computed and mapped to posture label.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 5 recommendation generation: baseline guidance derived from score and optionally upgraded) Tj
+0 -14 Td
+(through external Claude recommender if key exists.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 6 persistence: asset row created with TLS/API metadata; category findings and phased) Tj
+0 -14 Td
+(recommendations are inserted.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 7 CBOM synthesis: condensed scan representation transformed into CycloneDX style document) Tj
+0 -14 Td
+(with PQC properties.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 8 chain block append: one block per scan stores payload hash and chain linkage fields.) Tj
+0 -14 Td
+0 -8 Td
+(Stage 9 completion: scan state set to completed with progress 100 and terminal log event.) Tj
+0 -14 Td
+0 -8 Td
+(Failure path: exception triggers failed state, error text persistence, and error log append.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 7 of 15) Tj
+ET
+
+endstream
+endobj
+26 0 obj
+<< /Length 1581 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(HNDL and PQC Logic) Tj
+/F1 10 Tf
+0 -24 Td
+(Status weight constants: CRITICAL=100, WARNING=50, ACCEPTABLE=20, SAFE=0.) Tj
+0 -14 Td
+0 -8 Td
+(Weighted score formula: key_exchange\\(45%\\), authentication\\(25%\\), tls_version\\(15%\\),) Tj
+0 -14 Td
+(cert_algo\\(10%\\), symmetric\\(5%\\).) Tj
+0 -14 Td
+0 -8 Td
+(Key exchange classification marks ML-KEM/Kyber indicators as SAFE; classical) Tj
+0 -14 Td
+(RSA/DHE/ECDHE/X25519 patterns trend to CRITICAL or WARNING by rule.) Tj
+0 -14 Td
+0 -8 Td
+(Authentication classification checks certificate signature and JWT algorithm hints; classical) Tj
+0 -14 Td
+(signature families are scored as CRITICAL in this model.) Tj
+0 -14 Td
+0 -8 Td
+(TLS version classification: TLS 1.0/1.1 critical, TLS 1.2 warning, TLS 1.3 acceptable baseline.) Tj
+0 -14 Td
+0 -8 Td
+(Certificate algorithm classification penalizes MD5/SHA1 severely and rewards stronger or PQC) Tj
+0 -14 Td
+(signature markers.) Tj
+0 -14 Td
+0 -8 Td
+(Symmetric classification treats 3DES as critical and modern suites as acceptable baselines.) Tj
+0 -14 Td
+0 -8 Td
+(Label thresholds: <=15 Fully Quantum Safe, <=35 PQC Ready, <=60 Transitioning, >60 Critical) Tj
+0 -14 Td
+(Risk.) Tj
+0 -14 Td
+0 -8 Td
+(CBOM mapping adds explicit properties for FIPS 203, FIPS 204, and FIPS 205 presence checks based) Tj
+0 -14 Td
+(on observed algorithm markers.) Tj
+0 -14 Td
+0 -8 Td
+(Frontend scanner reproduces live HNDL formula breakdown from findings endpoint to expose score) Tj
+0 -14 Td
+(transparency to reviewers.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 8 of 15) Tj
+ET
+
+endstream
+endobj
+27 0 obj
+<< /Length 1627 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Data Model and Persistence) Tj
+/F1 10 Tf
+0 -24 Td
+(Table scans: primary scan identity, domain, execution mode, status, progress, timestamps, and) Tj
+0 -14 Td
+(terminal error fields.) Tj
+0 -14 Td
+0 -8 Td
+(Table scan_logs: ordered operational trace messages tied to scan_id.) Tj
+0 -14 Td
+0 -8 Td
+(Table assets: per-host posture row with risk_score, label, tls_version, cipher_suite, and JSON) Tj
+0 -14 Td
+(metadata for TLS/API details.) Tj
+0 -14 Td
+0 -8 Td
+(Table crypto_findings: category-level algorithm and status rows linked to asset and scan.) Tj
+0 -14 Td
+0 -8 Td
+(Table recommendations: actionable remediation text with phase tag for roadmap rendering.) Tj
+0 -14 Td
+0 -8 Td
+(Table cbom_exports: persisted CycloneDX-style JSON payloads per scan.) Tj
+0 -14 Td
+0 -8 Td
+(Table chain_blocks: tamper-evidence style ledger with block_index, payload_hash, prev_hash,) Tj
+0 -14 Td
+(nonce, difficulty, block_hash, and algo_version.) Tj
+0 -14 Td
+0 -8 Td
+(CRUD assembly paths build scan detail payloads combining logs, assets, CBOM, and chain entries) Tj
+0 -14 Td
+(for frontend consumption.) Tj
+0 -14 Td
+0 -8 Td
+(Findings API enriches each crypto finding with CERT-IN style mapping fields such as primitive,) Tj
+0 -14 Td
+(OID, classical level, key state, activation date, and profile marker.) Tj
+0 -14 Td
+0 -8 Td
+(Leaderboard payload computes average risk directly from persisted assets to support ranking and) Tj
+0 -14 Td
+(trend views.) Tj
+0 -14 Td
+0 -8 Td
+(Transaction strategy uses short-lived session scope and commit-on-success semantics.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 9 of 15) Tj
+ET
+
+endstream
+endobj
+28 0 obj
+<< /Length 1536 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(API Contract and Behaviors) Tj
+/F1 10 Tf
+0 -24 Td
+(POST /api/scan: starts one domain scan after allow-list validation; returns scan_id and) Tj
+0 -14 Td
+(queued/running state.) Tj
+0 -14 Td
+0 -8 Td
+(POST /api/scan/batch: validates all domains, creates multiple scans, and schedules each run.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/scan/{id}: returns scan summary, logs, assets, cbom snapshot, and chain blocks.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/scans: lightweight historical index for selectors and overview tabs.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/scan/{id}/findings: returns category findings plus recommendations and enrichment) Tj
+0 -14 Td
+(metadata.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/scan/{id}/cbom: serves CycloneDX JSON media type when available; returns conflict if) Tj
+0 -14 Td
+(not ready.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/scan/{id}/report.pdf: serves generated posture report document once findings exist.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/scan/{id}/certificate.pdf: allowed only for PQC Ready or Fully Quantum Safe aggregate) Tj
+0 -14 Td
+(posture.) Tj
+0 -14 Td
+0 -8 Td
+(GET /api/leaderboard: returns sorted scan risk aggregates for ranking modules.) Tj
+0 -14 Td
+0 -8 Td
+(POST /api/omegagpt/chat and /api/omegagpt: assistant request surface with mode and focus) Tj
+0 -14 Td
+(controls.) Tj
+0 -14 Td
+0 -8 Td
+(Error handling patterns: 400 for invalid domain input, 404 for missing scan, 409 for artifact) Tj
+0 -14 Td
+(not-ready or certificate gating conditions.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 10 of 15) Tj
+ET
+
+endstream
+endobj
+29 0 obj
+<< /Length 1685 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Frontend Architecture and Modules) Tj
+/F1 10 Tf
+0 -24 Td
+(Frontend is a single React entry file with tab-driven module composition and shared style) Tj
+0 -14 Td
+(primitives.) Tj
+0 -14 Td
+0 -8 Td
+(Tabs implemented: Scanner, Bank Insight Studio, Asset Map, Crypto, CBOM, Roadmap, Bank Intel,) Tj
+0 -14 Td
+(and Architecture Docs.) Tj
+0 -14 Td
+0 -8 Td
+(Lockscreen gate controls dashboard access and performs uppercase alphanumeric key handling with) Tj
+0 -14 Td
+(masked input behavior.) Tj
+0 -14 Td
+0 -8 Td
+(Scanner tab covers launch, progress overlay, live terminal log, chain-block anchor indicator,) Tj
+0 -14 Td
+(and artifact download actions.) Tj
+0 -14 Td
+0 -8 Td
+(Asset Map tab loads completed scan assets and presents per-asset posture cards.) Tj
+0 -14 Td
+0 -8 Td
+(Crypto tab provides radar view and tabular finding breakdown including CERT-IN style columns.) Tj
+0 -14 Td
+0 -8 Td
+(CBOM tab exposes raw JSON and visible FIPS standard mapping panel for quick standards) Tj
+0 -14 Td
+(demonstration.) Tj
+0 -14 Td
+0 -8 Td
+(Roadmap tab groups recommendations into execution phases.) Tj
+0 -14 Td
+0 -8 Td
+(Leaderboard tab aggregates safety/risk comparisons and exposes analysis, prediction, and) Tj
+0 -14 Td
+(solution summaries.) Tj
+0 -14 Td
+0 -8 Td
+(Bank Insight Studio emphasizes Indian bank comparison with area-chart lineup and action) Tj
+0 -14 Td
+(recommendations.) Tj
+0 -14 Td
+0 -8 Td
+(Omega floating assistant is globally available from dashboard state.) Tj
+0 -14 Td
+0 -8 Td
+(The app uses Recharts when available and includes fallback render paths when chart library is) Tj
+0 -14 Td
+(absent.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 11 of 15) Tj
+ET
+
+endstream
+endobj
+30 0 obj
+<< /Length 1494 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Analytics and Visualization Logic) Tj
+/F1 10 Tf
+0 -24 Td
+(Chart strategy is data-first: all visual cards derive from backend scan and findings endpoints.) Tj
+0 -14 Td
+0 -8 Td
+(Crypto radar chart computes category averages from findings statuses transformed to numeric) Tj
+0 -14 Td
+(values.) Tj
+0 -14 Td
+0 -8 Td
+(Leaderboard section includes vertical bar ranking and multiple area charts for risk spread and) Tj
+0 -14 Td
+(trend narrative.) Tj
+0 -14 Td
+0 -8 Td
+(Bank Insight Studio uses area charts for security-vs-risk comparison across preset bank domains.) Tj
+0 -14 Td
+0 -8 Td
+(Scan overlay displays progress in real time based on polling loop against scan status endpoint.) Tj
+0 -14 Td
+0 -8 Td
+(Formula transparency card displays each HNDL component contribution and total weighted score.) Tj
+0 -14 Td
+0 -8 Td
+(Terminal log panel streams and autoscrolls backend scan logs for operational explainability.) Tj
+0 -14 Td
+0 -8 Td
+(Fallback behaviors ensure usability when Recharts is unavailable by rendering text and bar) Tj
+0 -14 Td
+(substitutes.) Tj
+0 -14 Td
+0 -8 Td
+(Color coding and status badges tie to shared riskColor and status maps for consistent semantics.) Tj
+0 -14 Td
+0 -8 Td
+(Preset bank list starts with PNB domain for presentation alignment.) Tj
+0 -14 Td
+0 -8 Td
+(Artifact buttons directly call report and certificate endpoints and parse Content-Disposition) Tj
+0 -14 Td
+(for file naming.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 12 of 15) Tj
+ET
+
+endstream
+endobj
+31 0 obj
+<< /Length 1571 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Security Controls and Trust Features) Tj
+/F1 10 Tf
+0 -24 Td
+(Input governance: only configured Indian bank domains are accepted for scan initiation.) Tj
+0 -14 Td
+0 -8 Td
+(Domain normalization strips scheme, path, and port to reduce bypass and canonicalization issues.) Tj
+0 -14 Td
+0 -8 Td
+(Scan execution logs are persisted, providing an auditable timeline of each stage.) Tj
+0 -14 Td
+0 -8 Td
+(Certificate issuance is risk-gated to prevent misleading safe-label artifacts for high-risk) Tj
+0 -14 Td
+(scans.) Tj
+0 -14 Td
+0 -8 Td
+(Chain block append routine computes canonical payload hash and links previous block hash for) Tj
+0 -14 Td
+(tamper-evidence signaling.) Tj
+0 -14 Td
+0 -8 Td
+(Chain block schema includes difficulty and nonce fields to document proof-of-work generation.) Tj
+0 -14 Td
+0 -8 Td
+(Frontend lockscreen enforces masked alphanumeric input handling before dashboard unlock.) Tj
+0 -14 Td
+0 -8 Td
+(Assistant fallback path is explicit and labeled, avoiding silent failure modes when live model) Tj
+0 -14 Td
+(keys are absent.) Tj
+0 -14 Td
+0 -8 Td
+(CORS is currently open by configuration; production hardening can narrow allowed origins.) Tj
+0 -14 Td
+0 -8 Td
+(TLS and API analyzers perform passive metadata inspection rather than intrusive exploitation.) Tj
+0 -14 Td
+0 -8 Td
+(Data persistence focuses on posture metadata and avoids secret material collection.) Tj
+0 -14 Td
+0 -8 Td
+(Operational conflicts \\(artifact not ready\\) return structured HTTP 409 responses.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 13 of 15) Tj
+ET
+
+endstream
+endobj
+32 0 obj
+<< /Length 1608 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Omega Assistant Logic) Tj
+/F1 10 Tf
+0 -24 Td
+(Assistant UI maintains local chat state and sends requests with context, mode, and focus) Tj
+0 -14 Td
+(controls.) Tj
+0 -14 Td
+0 -8 Td
+(Context priming: frontend attempts to build a leaderboard-derived context string; if) Tj
+0 -14 Td
+(unavailable, demo baseline rows are used.) Tj
+0 -14 Td
+0 -8 Td
+(Modes: auto mode attempts live model when key exists; offline mode can be forced from UI.) Tj
+0 -14 Td
+0 -8 Td
+(Live path: backend targets Gemini generateContent endpoint with system instruction and) Tj
+0 -14 Td
+(user/context payload.) Tj
+0 -14 Td
+0 -8 Td
+(Fallback path: deterministic intent router returns domain-aware responses for greeting, intro,) Tj
+0 -14 Td
+(best/riskiest bank, analysis, prediction, solutions, risks, roadmap, and CBOM explainers.) Tj
+0 -14 Td
+0 -8 Td
+(Offline response metadata includes intent, source tag, offline_mode boolean, and offline_reason) Tj
+0 -14 Td
+(for transparency.) Tj
+0 -14 Td
+0 -8 Td
+(Assistant is integrated with quick prompts for judged demo speed and consistent narrative.) Tj
+0 -14 Td
+0 -8 Td
+(Failure handling ensures user always receives a response text rather than raw transport) Tj
+0 -14 Td
+(exceptions.) Tj
+0 -14 Td
+0 -8 Td
+(Focus controls \\(general, analysis, prediction, solutions\\) bias response framing without) Tj
+0 -14 Td
+(requiring prompt engineering by user.) Tj
+0 -14 Td
+0 -8 Td
+(This design provides graceful resilience during live demos where third-party model credentials) Tj
+0 -14 Td
+(may be unavailable.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 14 of 15) Tj
+ET
+
+endstream
+endobj
+33 0 obj
+<< /Length 1930 >>
+stream
+BT
+/F1 18 Tf
+50 800 Td
+(Deployment, Operations, and Roadmap) Tj
+/F1 10 Tf
+0 -24 Td
+(Local run path: create virtual environment, install requirements, and start uvicorn) Tj
+0 -14 Td
+(backend.main:app on port 8000.) Tj
+0 -14 Td
+0 -8 Td
+(Production-like async path: set USE_CELERY=true and run celery worker backed by Redis.) Tj
+0 -14 Td
+0 -8 Td
+(Static frontend is served by backend under /static with index route mapping for single-entry) Tj
+0 -14 Td
+(launch.) Tj
+0 -14 Td
+0 -8 Td
+(Database default is local SQLite file; DATABASE_URL can be overridden for other SQL backends.) Tj
+0 -14 Td
+0 -8 Td
+(Operational checklist: verify domain allow-list, scan artifact endpoints, leaderboard) Tj
+0 -14 Td
+(aggregation, and assistant offline labeling before demo.) Tj
+0 -14 Td
+0 -8 Td
+(Demo flow recommendation: unlock -> scan PNB preset -> show log progression -> open findings and) Tj
+0 -14 Td
+(HNDL breakdown -> view CBOM/FIPS mapping -> download report/certificate if eligible -> show) Tj
+0 -14 Td
+(assistant analysis.) Tj
+0 -14 Td
+0 -8 Td
+(Current strengths: deterministic scoring transparency, standards-mapped artifacts, bank-focused) Tj
+0 -14 Td
+(domain constraints, and audit-chain presence.) Tj
+0 -14 Td
+0 -8 Td
+(Current limitations: heuristic crypto classification, external discovery dependency quality, and) Tj
+0 -14 Td
+(model integration dependent on optional keys.) Tj
+0 -14 Td
+0 -8 Td
+(Near-term roadmap: richer protocol parsing, expanded compliance fields, scheduled rescans with) Tj
+0 -14 Td
+(drift alerts, and hardened origin/auth controls.) Tj
+0 -14 Td
+0 -8 Td
+(Governance roadmap: retention policy, signed artifact verification endpoint, and role-based) Tj
+0 -14 Td
+(operator workflows.) Tj
+0 -14 Td
+0 -8 Td
+(Conclusion: Quanthunt already provides a coherent end-to-end PQC posture intelligence loop from) Tj
+0 -14 Td
+(discovery to decision artifact.) Tj
+0 -14 Td
+0 -8 Td
+ET
+BT
+/F1 9 Tf
+245 24 Td
+(Page 15 of 15) Tj
+ET
+
+endstream
+endobj
+xref
+0 34
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000211 00000 n 
+0000000281 00000 n 
+0000000408 00000 n 
+0000000535 00000 n 
+0000000662 00000 n 
+0000000789 00000 n 
+0000000916 00000 n 
+0000001043 00000 n 
+0000001171 00000 n 
+0000001299 00000 n 
+0000001427 00000 n 
+0000001555 00000 n 
+0000001683 00000 n 
+0000001811 00000 n 
+0000001939 00000 n 
+0000002067 00000 n 
+0000002195 00000 n 
+0000004253 00000 n 
+0000005705 00000 n 
+0000007781 00000 n 
+0000009621 00000 n 
+0000011449 00000 n 
+0000013292 00000 n 
+0000015316 00000 n 
+0000016950 00000 n 
+0000018630 00000 n 
+0000020219 00000 n 
+0000021957 00000 n 
+0000023504 00000 n 
+0000025128 00000 n 
+0000026789 00000 n 
+trailer
+<< /Size 34 /Root 1 0 R >>
+startxref
+28772
+%%EOF
