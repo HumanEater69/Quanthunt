@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://quanthunt-backend.koyeb.app/api/$1"
+      "destination": "https://quanthunt.netlify.app/api/$1"
     }
   ]
 }
