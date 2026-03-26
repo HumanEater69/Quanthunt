@@ -68,6 +68,17 @@ jobs:
             exit 1
           fi
 
+      - name: Show selected Azure auth path
+        run: |
+          if [ -n "${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}" ]; then
+            echo "Auth mode: publish-profile"
+          elif [ -n "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+            echo "Auth mode: azure-login"
+          else
+            echo "Auth mode: none"
+            exit 1
+          fi
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
