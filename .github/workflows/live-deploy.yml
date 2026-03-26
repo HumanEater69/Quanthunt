@@ -45,7 +45,7 @@ jobs:
       - name: Deploy to Netlify (Production)
         uses: netlify/actions/cli@master
         with:
-          args: deploy --prod --dir .
+          args: deploy --prod --dir frontend
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -63,6 +63,10 @@ jobs:
 
       - name: Validate Azure deployment secrets
         run: |
+          if [ -z "${{ secrets.AZURE_WEBAPP_NAME }}" ]; then
+            echo "Missing AZURE_WEBAPP_NAME in repository secrets."
+            exit 1
+          fi
           if [ -z "${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}" ] && [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
             echo "Missing Azure credentials. Set AZURE_WEBAPP_PUBLISH_PROFILE or AZURE_CREDENTIALS in repository secrets."
             exit 1
