@@ -54,7 +54,7 @@ Required GitHub secrets for backend workflow:
 
 Recommended backend candidate for current FastAPI codebase:
 
-- Any free host with deploy webhook support (for example Netlify build hook, Koyeb, Render)
+- Railway FastAPI service: `https://quanthunt-fullstack-production.up.railway.app`
 
 Decision for this repo:
 
@@ -72,7 +72,7 @@ scripts\setup_github_secrets_netlify_backend.ps1 \
 	-NetlifySiteId "<netlify-site-id>" \
 	-NetlifySiteUrl "https://quanthunt.netlify.app" \
 	-BackendDeployHookUrl "<backend-deploy-hook-url>" \
-	-BackendOrigin "https://quanthunt.netlify.app"
+	-BackendOrigin "https://quanthunt-fullstack-production.up.railway.app"
 ```
 
 ## Deep Clean Smoke Test (One Command)
