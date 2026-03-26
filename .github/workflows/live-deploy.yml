@@ -42,6 +42,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show Netlify target (temporary debug)
+        run: |
+          if [ -n "${{ secrets.NETLIFY_SITE_ID }}" ]; then
+            site_hash="$(printf '%s' "${{ secrets.NETLIFY_SITE_ID }}" | sha256sum | cut -c1-10)"
+            echo "Netlify site id hash prefix: ${site_hash}"
+          else
+            echo "Netlify site id hash prefix: missing"
+          fi
+          echo "Netlify publish dir: frontend"
+
       - name: Deploy to Netlify (Production)
         uses: netlify/actions/cli@master
         with:
@@ -74,6 +84,7 @@ jobs:
 
       - name: Show selected Azure auth path
         run: |
+          echo "Azure app name: ${{ secrets.AZURE_WEBAPP_NAME }}"
           if [ -n "${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}" ]; then
             echo "Auth mode: publish-profile"
           elif [ -n "${{ secrets.AZURE_CREDENTIALS }}" ]; then
