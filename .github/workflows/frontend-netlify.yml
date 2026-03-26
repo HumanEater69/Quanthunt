@@ -3,10 +3,11 @@ name: Deploy Frontend (Netlify)
 on:
   push:
     branches: ["master", "main"]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-netlify.yml"
   workflow_dispatch:
+
+concurrency:
+  group: deploy-frontend-netlify-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-backend:
