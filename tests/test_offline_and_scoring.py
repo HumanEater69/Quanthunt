@@ -1,6 +1,7 @@
 import unittest
 
 from backend.main import (
+    _certificate_eligibility,
     _extract_tld,
     _offline_chain_reply,
     _vpn_block_reasons,
@@ -92,6 +93,61 @@ class CbomLogicTests(unittest.TestCase):
         proto = cbom["components"][0]["cryptoProperties"]["protocolProperties"]
         self.assertIn("keyExchangeAlgorithm", proto)
         self.assertIn("primaryCipherSuite", proto)
+
+
+class CertificationEligibilityTests(unittest.TestCase):
+    def test_fails_without_pqc_signal(self) -> None:
+        scan = {
+            "findings": [
+                {
+                    "asset": "example.com",
+                    "hndl_risk_score": 40,
+                    "key_exchange_status": "WARNING",
+                    "auth_status": "WARNING",
+                    "tls": {"tls_version": "TLSv1.3", "scan_error": ""},
+                }
+            ],
+            "cbom": {
+                "components": [
+                    {
+                        "properties": [
+                            {"name": "nist-fips-203-signal-detected", "value": "false"},
+                            {"name": "nist-fips-204-signal-detected", "value": "false"},
+                            {"name": "nist-fips-205-signal-detected", "value": "false"},
+                        ]
+                    }
+                ]
+            },
+        }
+        ok, reasons, _ = _certificate_eligibility(scan)
+        self.assertFalse(ok)
+        self.assertTrue(any("No NIST PQC signal" in r for r in reasons))
+
+    def test_fails_on_unknown_tls_and_critical(self) -> None:
+        scan = {
+            "findings": [
+                {
+                    "asset": "bad.example",
+                    "hndl_risk_score": 72,
+                    "key_exchange_status": "CRITICAL",
+                    "auth_status": "WARNING",
+                    "tls": {"tls_version": "unknown", "scan_error": "timeout"},
+                }
+            ],
+            "cbom": {
+                "components": [
+                    {
+                        "properties": [
+                            {"name": "nist-fips-203-signal-detected", "value": "true"},
+                        ]
+                    }
+                ]
+            },
+        }
+        ok, reasons, _ = _certificate_eligibility(scan)
+        self.assertFalse(ok)
+        self.assertTrue(any("TLS handshake/version could not be validated" in r for r in reasons))
+        self.assertTrue(any("Critical cryptographic posture" in r for r in reasons))
 
 class OfflineAssistantIntentTests(unittest.TestCase):
     def test_top3_risky_intent(self) -> None:

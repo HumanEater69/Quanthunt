@@ -172,6 +172,66 @@ def _simulate_pqc_latency(
     }
 
 
+def _certificate_eligibility(scan: dict) -> tuple[bool, list[str], float]:
+    findings = scan.get("findings") or []
+    if not findings:
+        return False, ["No findings were produced for this scan."], 100.0
+
+    scores = [float(f.get("hndl_risk_score", 0)) for f in findings]
+    avg_risk = sum(scores) / max(len(scores), 1)
+    reasons: list[str] = []
+
+    # Tighten certification bar so weak/uncertain scans are not marked certified.
+    if avg_risk > 70:
+        reasons.append(
+            f"Average HNDL risk {avg_risk:.2f} exceeds certification threshold (<= 70)."
+        )
+
+    unknown_tls_assets = []
+    for f in findings:
+        tls = f.get("tls") or {}
+        tls_version = str(tls.get("tls_version") or "").strip().lower()
+        scan_error = str(tls.get("scan_error") or "").strip()
+        if tls_version in {"", "unknown", "none"} or scan_error:
+            unknown_tls_assets.append(str(f.get("asset") or "unknown"))
+    if unknown_tls_assets:
+        reasons.append(
+            f"TLS handshake/version could not be validated for {len(unknown_tls_assets)} asset(s): "
+            + ", ".join(unknown_tls_assets[:8])
+            + (" ..." if len(unknown_tls_assets) > 8 else "")
+        )
+
+    critical_assets = []
+    for f in findings:
+        if f.get("key_exchange_status") == "CRITICAL" or f.get("auth_status") == "CRITICAL":
+            critical_assets.append(str(f.get("asset") or "unknown"))
+    if critical_assets:
+        reasons.append(
+            f"Critical cryptographic posture detected on {len(critical_assets)} asset(s): "
+            + ", ".join(critical_assets[:8])
+            + (" ..." if len(critical_assets) > 8 else "")
+        )
+
+    cbom = scan.get("cbom") or {}
+    components = cbom.get("components") if isinstance(cbom, dict) else []
+    pqc_signals = 0
+    if isinstance(components, list):
+        for comp in components:
+            props = {str(p.get("name")): str(p.get("value")) for p in (comp.get("properties") or [])}
+            if (
+                props.get("nist-fips-203-signal-detected", "false").lower() == "true"
+                or props.get("nist-fips-204-signal-detected", "false").lower() == "true"
+                or props.get("nist-fips-205-signal-detected", "false").lower() == "true"
+            ):
+                pqc_signals += 1
+    if pqc_signals == 0:
+        reasons.append(
+            "No NIST PQC signal (FIPS 203/204/205) detected in observed TLS/certificate metadata."
+        )
+
+    return len(reasons) == 0, reasons, round(avg_risk, 2)
+
+
 def _normalize_domain(domain: str) -> str:
     d = domain.strip().lower()
     d = re.sub(r"^https?://", "", d)
@@ -1255,13 +1315,15 @@ async def get_scan_certificate(scan_id: str) -> Response:
             status_code=409,
             detail="Scan findings are required before certificate generation",
         )
-    scores = [float(f.get("hndl_risk_score", 0)) for f in findings]
-    avg_risk = sum(scores) / max(len(scores), 1)
-    label = readiness_label(avg_risk)
-    if label == "CRITICAL EXPOSURE":
+    eligible, reasons, avg_risk = _certificate_eligibility(scan)
+    if not eligible:
         raise HTTPException(
             status_code=409,
-            detail=f"Certificate available only for non-critical posture (HNDL <= 80). Current label: {label}",
+            detail={
+                "message": "Not QuantHunt Certified",
+                "avg_hndl_risk": avg_risk,
+                "reasons": reasons,
+            },
         )
     pdf = build_quantum_certificate(scan, avg_risk)
     return Response(
@@ -1329,13 +1391,15 @@ async def generate_pdf_on_demand(req: PdfGenerateRequest) -> Response:
         )
 
     if req.kind == "certificate":
-        scores = [float(f.get("hndl_risk_score", 0)) for f in findings]
-        avg_risk = sum(scores) / max(len(scores), 1)
-        label = readiness_label(avg_risk)
-        if label == "CRITICAL EXPOSURE":
+        eligible, reasons, avg_risk = _certificate_eligibility(scan)
+        if not eligible:
             raise HTTPException(
                 status_code=409,
-                detail=f"Certificate available only for non-critical posture (HNDL <= 80). Current label: {label}",
+                detail={
+                    "message": "Not QuantHunt Certified",
+                    "avg_hndl_risk": avg_risk,
+                    "reasons": reasons,
+                },
             )
         pdf = build_quantum_certificate(scan, avg_risk)
         filename = f"quanthunt-certificate-{scan.get('scan_id', target_scan_id)}.pdf"

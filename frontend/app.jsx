@@ -2601,7 +2601,10 @@ function ScannerTab({
 
   useEffect(() => {
     if (flashMessage) {
-      const timer = setTimeout(() => setFlashMessage(null), 5000);
+      const timer = setTimeout(
+        () => setFlashMessage(null),
+        Number(flashMessage.durationMs || 11000),
+      );
       return () => clearTimeout(timer);
     }
   }, [flashMessage]);
@@ -2668,11 +2671,28 @@ function ScannerTab({
     const r = await fetch(`${API}${path}`);
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
-      const detail =
-        typeof err?.detail === "string"
-          ? err.detail
+      const detail = err?.detail;
+      if (detail && typeof detail === "object" && detail?.message === "Not QuantHunt Certified") {
+        const reasons = Array.isArray(detail.reasons) ? detail.reasons : [];
+        const reasonText = reasons.length
+          ? reasons.map((x, i) => `${i + 1}. ${x}`).join("\n")
+          : "Certification eligibility checks failed.";
+        setFlashMessage({
+          type: "error",
+          centered: true,
+          durationMs: 11000,
+          text:
+            `THIS WEBSITE IS NOT QUANTHUNT CERTIFIED\n\n` +
+            `Avg HNDL Risk: ${detail.avg_hndl_risk ?? "n/a"}\n` +
+            `${reasonText}`,
+        });
+        return;
+      }
+      const message =
+        typeof detail === "string"
+          ? detail
           : "File unavailable right now.";
-      alert(detail);
+      setFlashMessage({ type: "error", text: message, durationMs: 11000 });
       return;
     }
     const blob = await r.blob();
@@ -3057,9 +3077,16 @@ function ScannerTab({
         {flashMessage && (
           <div
             style={{
+              position: flashMessage.centered ? "fixed" : "relative",
+              left: flashMessage.centered ? "50%" : undefined,
+              top: flashMessage.centered ? "50%" : undefined,
+              transform: flashMessage.centered ? "translate(-50%, -50%)" : undefined,
+              zIndex: flashMessage.centered ? 3000 : undefined,
+              minWidth: flashMessage.centered ? "min(86vw, 780px)" : undefined,
+              maxWidth: flashMessage.centered ? "86vw" : undefined,
               background:
                 flashMessage.type === "error"
-                  ? "rgba(220,53,69,0.15)"
+                  ? "linear-gradient(145deg, rgba(145,0,20,0.42), rgba(100,0,10,0.30))"
                   : "rgba(40,167,69,0.15)",
               border: `1px solid ${flashMessage.type === "error" ? C.red : C.green}`,
               color: flashMessage.type === "error" ? C.red : C.green,
@@ -3071,6 +3098,11 @@ function ScannerTab({
               display: "flex",
               alignItems: "center",
               gap: 12,
+              backdropFilter: flashMessage.centered ? "blur(22px) saturate(1.15)" : undefined,
+              WebkitBackdropFilter: flashMessage.centered ? "blur(22px) saturate(1.15)" : undefined,
+              boxShadow: flashMessage.centered
+                ? "0 22px 55px rgba(60,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.14)"
+                : undefined,
               animation: "pulse 2s infinite",
             }}
           >
@@ -9269,7 +9301,7 @@ function App() {
 
   useEffect(() => {
     if (!modeFlash) return;
-    const id = setTimeout(() => setModeFlash(null), 5600);
+    const id = setTimeout(() => setModeFlash(null), 11000);
     return () => clearTimeout(id);
   }, [modeFlash]);
 

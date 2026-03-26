@@ -62,6 +62,24 @@ Add these repository secrets in GitHub -> Settings -> Secrets and variables -> A
 
 After secrets are set, every push updates the live website automatically.
 
+You can also set them in one command via script:
+
+```powershell
+scripts\setup_github_secrets.ps1 \
+	-Repo "HumanEater69/QuantHunt" \
+	-NetlifyAuthToken "<netlify-auth-token>" \
+	-NetlifySiteId "<netlify-site-id>" \
+	-ApiOrigin "https://quanthunt-backend.azurewebsites.net" \
+	-AzureWebAppName "quanthunt-backend" \
+	-AzureWebAppPublishProfilePath "C:\path\to\publishProfile.xml"
+```
+
+Live deploy workflow now enforces these checks before production deployment:
+
+- `New CBOM logic tests pass`
+- `Deploy Frontend (Netlify)`
+- `Deploy Backend (Azure Web App)`
+
 ## Deep Clean Smoke Test (One Command)
 
 Runs a clean temporary server process and executes scripted end-to-end checks for:
