@@ -1,5 +1,0 @@
-[[redirects]]
-from = "/api/*"
-to = "${API_ORIGIN}/api/:splat"
-status = 200
-force = true

@@ -13,72 +13,87 @@ uvicorn backend.main:app --reload --port 8000
 
 Open: `http://localhost:8000`
 
-## Deploy Backend To Microsoft Azure (App Service)
+## Deployment Revamp (Vercel + Backend Hook)
 
-Use Azure App Service (Linux, Python 3.11) for the backend.
+This repo has been cleaned up to remove Netlify/Azure deployment paths.
 
-```powershell
-az group create --name rg-quanthunt --location centralindia
-az appservice plan create --name asp-quanthunt --resource-group rg-quanthunt --sku B1 --is-linux
-az webapp create --name quanthunt-backend --resource-group rg-quanthunt --plan asp-quanthunt --runtime "PYTHON|3.11"
-az webapp config set --name quanthunt-backend --resource-group rg-quanthunt --startup-file "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-az webapp config appsettings set --name quanthunt-backend --resource-group rg-quanthunt --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true CORS_ALLOW_ORIGINS=https://quanthunt.netlify.app
-az webapp up --name quanthunt-backend --resource-group rg-quanthunt --runtime "PYTHON|3.11"
-```
+- Frontend deploy target: Vercel
+- Backend deploy target: provider deploy hook (recommended: Koyeb FastAPI service)
 
-After deploy, this repo's `netlify.toml` already routes `/api/*` to:
+### Current Deployment Workflows
 
-- `${API_ORIGIN}/api/:splat`
+- `.github/workflows/frontend-vercel.yml`
+- `.github/workflows/backend-deploy.yml`
 
-Set `API_ORIGIN` in Netlify (Site settings -> Environment variables), for example:
+Both workflows enforce backend regression tests (`tests.test_offline_and_scoring`) before deployment.
 
-- `API_ORIGIN=https://quanthunt-backend.azurewebsites.net`
+### Frontend (Vercel)
 
-### Azure Production Environment Template
+The frontend is deployed from the `frontend/` directory. Vercel routing is configured in:
 
-Use `.env.azure.production.template` as the baseline for Azure App Service application settings.
-It includes recommended scan tuning defaults for deep and shallow scans.
+- `frontend/vercel.json`
 
-## Auto Apply Changes To Live Domain
+It rewrites `/api/*` to the backend candidate origin:
 
-This repo now includes GitHub Actions live deployment workflow:
+- `https://quanthunt-backend.koyeb.app/api/*`
 
-- `.github/workflows/live-deploy.yml`
+Required GitHub secrets for frontend workflow:
 
-It auto-deploys on every push to `master` or `main`:
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
 
-- Frontend -> Netlify production
-- Backend -> Azure Web App
+### Backend (Free Candidate)
+
+Backend workflow triggers a provider deploy hook and probes health on:
+
+- `${BACKEND_ORIGIN}/api/scans`
+
+Optional keepalive workflow:
+
+- `.github/workflows/backend-keepalive.yml` (scheduled ping every 10 minutes)
+
+Required GitHub secrets for backend workflow:
+
+- `BACKEND_DEPLOY_HOOK_URL`
+- `BACKEND_ORIGIN`
+
+Recommended backend candidate for current FastAPI codebase:
+
+- Koyeb (container deployment from this repo's Dockerfile)
+
+### Cloudflare vs AWS Free Constraints (Before Finalizing)
+
+Cloudflare Workers (from Workers pricing/docs):
+
+- No credit card needed on free plan
+- Free tier includes request/usage limits (for example 100,000 daily requests)
+- Best for edge/serverless patterns, but this backend is a stateful FastAPI app and would require a major runtime refactor to fit Workers constraints
+
+AWS Free Tier (from AWS Free page):
+
+- Time/credit constrained for new accounts (up to 6 months with credits model shown)
+- Not a clean "forever free" path for an always-on web backend
+- Account setup and billing model are less aligned with strict "no card + 24/7 always-on" requirement
+
+Decision for this repo:
+
+- Use Vercel for frontend
+- Use Koyeb as backend candidate via deploy hook for a FastAPI-native deployment path with minimal code change
 
 ### One-time GitHub Secrets Setup
 
-Add these repository secrets in GitHub -> Settings -> Secrets and variables -> Actions:
-
-- `NETLIFY_AUTH_TOKEN`
-- `NETLIFY_SITE_ID`
-- `API_ORIGIN` (example: `https://quanthunt-backend.azurewebsites.net`)
-- `AZURE_WEBAPP_NAME` (example: `quanthunt-backend`)
-- `AZURE_WEBAPP_PUBLISH_PROFILE` (download from Azure Web App -> Get publish profile)
-
-After secrets are set, every push updates the live website automatically.
-
-You can also set them in one command via script:
+You can configure required secrets in one command:
 
 ```powershell
-scripts\setup_github_secrets.ps1 \
+scripts\setup_github_secrets_vercel_backend.ps1 \
 	-Repo "HumanEater69/QuantHunt" \
-	-NetlifyAuthToken "<netlify-auth-token>" \
-	-NetlifySiteId "<netlify-site-id>" \
-	-ApiOrigin "https://quanthunt-backend.azurewebsites.net" \
-	-AzureWebAppName "quanthunt-backend" \
-	-AzureWebAppPublishProfilePath "C:\path\to\publishProfile.xml"
+	-VercelToken "<vercel-token>" \
+	-VercelOrgId "<vercel-org-id>" \
+	-VercelProjectId "<vercel-project-id>" \
+	-BackendDeployHookUrl "<backend-deploy-hook-url>" \
+	-BackendOrigin "https://quanthunt-backend.koyeb.app"
 ```
-
-Live deploy workflow now enforces these checks before production deployment:
-
-- `New CBOM logic tests pass`
-- `Deploy Frontend (Netlify)`
-- `Deploy Backend (Azure Web App)`
 
 ## Deep Clean Smoke Test (One Command)
 

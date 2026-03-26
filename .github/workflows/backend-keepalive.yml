@@ -1,0 +1,18 @@
+name: Backend Keepalive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          if [ -z "${{ secrets.BACKEND_ORIGIN }}" ]; then
+            echo "BACKEND_ORIGIN not configured; skipping keepalive."
+            exit 0
+          fi
+          curl -fsSL "${{ secrets.BACKEND_ORIGIN }}/api/scans" >/dev/null

@@ -22,10 +22,6 @@ const Tooltip = RCH.Tooltip || (() => null);
 const Cell = RCH.Cell || (() => null);
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
-const NETLIFY_HOSTS = new Set([
-  "quanthunt.netlify.app",
-  "69c5241b50804617081efffb--quanthunt.netlify.app",
-]);
 const sanitizeApiBase = (value) => String(value || "").trim().replace(/\/+$/, "");
 const resolveApiBase = () => {
   try {
@@ -35,11 +31,6 @@ const resolveApiBase = () => {
     if (queryApi) {
       window.localStorage.setItem("qh_api_base", queryApi);
       return queryApi;
-    }
-    // In production on Netlify, always use same-origin /api proxy unless user passes ?api= explicitly.
-    if (NETLIFY_HOSTS.has(window.location.hostname)) {
-      window.localStorage.removeItem("qh_api_base");
-      return "";
     }
     const savedApi = sanitizeApiBase(window.localStorage.getItem("qh_api_base"));
     if (savedApi) return savedApi;
