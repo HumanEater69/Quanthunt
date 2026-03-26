@@ -33,7 +33,7 @@ jobs:
           python -m unittest tests.test_offline_and_scoring -q
 
   deploy-backend:
-    name: Deploy Backend (Hook)
+    name: Deploy Backend (Railway or Hook)
     runs-on: ubuntu-latest
     needs: test-backend
     steps:
@@ -48,8 +48,8 @@ jobs:
           fi
           if echo "$origin" | grep -qi "railway\.app"; then
             echo "railway_native=true" >> "$GITHUB_OUTPUT"
-            if [ -z "$hook" ]; then
-              echo "BACKEND_DEPLOY_HOOK_URL is required for Railway-native origin: $origin"
+            if [ -z "${{ secrets.RAILWAY_TOKEN }}" ] || [ -z "${{ secrets.RAILWAY_PROJECT_ID }}" ] || [ -z "${{ secrets.RAILWAY_ENVIRONMENT_ID }}" ] || [ -z "${{ secrets.RAILWAY_SERVICE_ID }}" ]; then
+              echo "Missing Railway secrets (RAILWAY_TOKEN, RAILWAY_PROJECT_ID, RAILWAY_ENVIRONMENT_ID, RAILWAY_SERVICE_ID) for Railway-native origin: $origin"
               exit 1
             fi
           else
@@ -59,7 +59,20 @@ jobs:
             fi
           fi
 
-      - name: Trigger backend deployment (optional)
+      - name: Install Railway CLI
+        if: ${{ steps.deploy_mode.outputs.railway_native == 'true' }}
+        run: npm install --global @railway/cli@latest
+
+      - name: Trigger backend deployment (Railway native)
+        if: ${{ steps.deploy_mode.outputs.railway_native == 'true' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT_ID }}" --service "${{ secrets.RAILWAY_SERVICE_ID }}"
+          railway redeploy --service "${{ secrets.RAILWAY_SERVICE_ID }}" --yes
+
+      - name: Trigger backend deployment (generic hook)
+        if: ${{ steps.deploy_mode.outputs.railway_native != 'true' }}
         run: |
           if [ -z "${{ secrets.BACKEND_DEPLOY_HOOK_URL }}" ]; then
             echo "Skipped hook trigger because BACKEND_DEPLOY_HOOK_URL is not configured."
