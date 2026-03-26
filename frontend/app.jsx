@@ -2859,6 +2859,27 @@ function ScannerTab({
       .catch(() => {
         if (alive) setFormula(null);
       });
+
+    fetch(`${API}/api/scan/${scanData.scan.scan_id}/certification-status`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((status) => {
+        if (!alive || !status || status.eligible) return;
+        const reasons = Array.isArray(status.reasons) ? status.reasons : [];
+        const reasonText = reasons.length
+          ? reasons.map((x, i) => `${i + 1}. ${x}`).join("\n")
+          : "Certification eligibility checks failed.";
+        setFlashMessage({
+          type: "error",
+          centered: true,
+          durationMs: 11000,
+          text:
+            `THIS WEBSITE IS NOT QUANTHUNT CERTIFIED\n\n` +
+            `Avg HNDL Risk: ${status.avg_hndl_risk ?? "n/a"}\n` +
+            `${reasonText}`,
+        });
+      })
+      .catch(() => {});
+
     return () => {
       alive = false;
     };

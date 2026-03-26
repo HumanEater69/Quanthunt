@@ -1196,6 +1196,28 @@ async def get_scan(scan_id: str) -> dict:
     return scan
 
 
+@app.get("/api/scan/{scan_id}/certification-status")
+async def get_certification_status(scan_id: str) -> dict:
+    scan_model = _find_scan_model_for_scan_id(scan_id)
+    if scan_model is None:
+        raise HTTPException(status_code=404, detail="scan_id not found")
+    token = set_active_scan_model(scan_model)
+    try:
+        with get_session() as session:
+            scan = assemble_scan_payload(session, scan_id)
+    finally:
+        reset_active_scan_model(token)
+    if scan is None:
+        raise HTTPException(status_code=404, detail="scan_id not found")
+    eligible, reasons, avg_risk = _certificate_eligibility(scan)
+    return {
+        "scan_id": scan_id,
+        "eligible": eligible,
+        "avg_hndl_risk": avg_risk,
+        "reasons": reasons,
+    }
+
+
 @app.get("/api/scans")
 async def list_scans(scan_model: str = Query(DEFAULT_SCAN_MODEL)) -> list[dict]:
     model = _assert_scan_model(scan_model)
@@ -1818,7 +1840,7 @@ def _offline_chain_reply(
         "cbom": "A Cryptography Bill of Materials (CBOM) lists all cryptographic assets, their algorithms, and migration priorities.",
         "pqc detection limits": "Detection is heuristic-based from observable TLS/cert metadata, not direct proof of internal implementation.",
         "chain block meaning": "The audit chain is a tamper-evident hash chain, not a decentralized blockchain. Each completed scan writes one hash-linked block for integrity tracking and audit replay.",
-        "certificate criteria": "Certificate rule: aggregate HNDL must be non-critical. Current threshold: score <= 80 is eligible; score > 80 is blocked.",
+        "certificate criteria": "Certificate rule: strict eligibility requires average HNDL <= 70, no unknown/failed TLS assets, no critical crypto statuses, and at least one NIST PQC signal (FIPS 203/204/205).",
         "testing coverage": "Current offline regression checks cover HNDL label thresholds, key-exchange calibration, and offline intent routing.",
         "frontend polish": "UI guidance: maintain high contrast, consistent legends, and clear labels for quantum-readiness states.",
         "demo script": "3-min Demo: Scan -> Show HNDL -> Audit Chain -> CBOM -> Ask QuantHunt AI for analysis.",
@@ -2025,8 +2047,7 @@ def _offline_chain_reply(
         "criteria" in msg or "eligible" in msg or "require" in msg
     ):
         return (
-            "Certificate rule: aggregate HNDL must be non-critical.\n"
-            "Current threshold: score <= 80 is eligible; score > 80 is blocked.",
+            "Certificate rule: strict eligibility requires average HNDL <= 70, no unknown/failed TLS assets, no critical crypto statuses, and at least one NIST PQC signal (FIPS 203/204/205).",
             "certificate_criteria",
         )
     if (

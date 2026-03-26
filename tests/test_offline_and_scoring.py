@@ -172,7 +172,7 @@ class OfflineAssistantIntentTests(unittest.TestCase):
     def test_certificate_criteria_intent(self) -> None:
         reply, intent = _offline_chain_reply("certificate criteria", CTX)
         self.assertEqual(intent, "certificate_criteria")
-        self.assertIn("score <= 80", reply)
+        self.assertIn("average HNDL <= 70", reply)
 
     def test_testing_intent(self) -> None:
         _, intent = _offline_chain_reply("testing coverage", CTX)
