@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+runlogs/
+node_modules/
+.vscode/
+quantumshield.db
+quantumshield_general.db
+quantumshield_banking.db
+*.bak
+*.zip

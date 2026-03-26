@@ -834,6 +834,18 @@ async def root() -> FileResponse:
     return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
+@app.get("/styles.css")
+async def frontend_styles() -> FileResponse:
+    return FileResponse(str(FRONTEND_DIR / "styles.css"), media_type="text/css")
+
+
+@app.get("/app.jsx")
+async def frontend_app_jsx() -> FileResponse:
+    return FileResponse(
+        str(FRONTEND_DIR / "app.jsx"), media_type="text/javascript"
+    )
+
+
 @app.post("/api/pqc/simulate")
 async def pqc_simulate(req: PqcSimRequest) -> dict:
     mss = 1460

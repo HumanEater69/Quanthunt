@@ -21,7 +21,25 @@ const YAxis = RCH.YAxis || (() => null);
 const Tooltip = RCH.Tooltip || (() => null);
 const Cell = RCH.Cell || (() => null);
 
-const API = "";
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
+const sanitizeApiBase = (value) => String(value || "").trim().replace(/\/+$/, "");
+const resolveApiBase = () => {
+  try {
+    const queryApi = sanitizeApiBase(
+      new URLSearchParams(window.location.search).get("api"),
+    );
+    if (queryApi) {
+      window.localStorage.setItem("qh_api_base", queryApi);
+      return queryApi;
+    }
+    const savedApi = sanitizeApiBase(window.localStorage.getItem("qh_api_base"));
+    if (savedApi) return savedApi;
+  } catch {
+    // Ignore storage/query failures and fall back to default local behavior.
+  }
+  return LOCAL_HOSTS.has(window.location.hostname) ? "" : "";
+};
+const API = resolveApiBase();
 
 const SCAN_MODELS = ["general", "banking"];
 const normalizeScanModel = (value) =>
@@ -2672,19 +2690,33 @@ function ScannerTab({
   };
 
   const executeScan = async (target, requestedModel) => {
-    const r = await fetch(`${API}/api/scan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        domain: target,
-        deep_scan: true,
-        scan_model: requestedModel,
-      }),
-    });
+    let r;
+    try {
+      r = await fetch(`${API}/api/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain: target,
+          deep_scan: true,
+          scan_model: requestedModel,
+        }),
+      });
+    } catch {
+      return setFlashMessage({
+        text: "?? BACKEND OFFLINE OR BLOCKED (CORS/NETWORK). SET API WITH ?api=https://your-backend-url",
+        type: "error",
+      });
+    }
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
+      const detail =
+        typeof err?.detail === "string"
+          ? err.detail
+          : !API && r.status === 404
+            ? "Backend API not connected. Deploy FastAPI and open this app as ?api=https://your-backend-url"
+            : "SCAN REJECTED BY MISSION CONTROL";
       return setFlashMessage({
-        text: `?? TRANSMISSION FAILED: ${err.detail || "SCAN REJECTED BY MISSION CONTROL"}`,
+        text: `?? TRANSMISSION FAILED: ${detail}`,
         type: "error",
       });
     }
