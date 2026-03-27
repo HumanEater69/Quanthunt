@@ -119,30 +119,32 @@ jobs:
 
       - name: Smoke check certification-status route
         run: |
-          spec="$(curl -fsSL "${{ secrets.BACKEND_ORIGIN }}/openapi.json" || true)"
-          if [ -z "$spec" ]; then
-            spec="$(curl -fsSL "${{ secrets.BACKEND_ORIGIN }}/api/openapi.json" || true)"
-          fi
-          if [ -z "$spec" ]; then
-            echo "Could not retrieve OpenAPI spec from backend origin."
-            exit 1
-          fi
-          if ! echo "$spec" | grep -q '"/api/scan/{scan_id}/certification-status"'; then
-            echo "Missing required route: /api/scan/{scan_id}/certification-status"
-            exit 1
-          fi
-          echo "Certification-status route present in OpenAPI spec."
+          for i in $(seq 1 20); do
+            spec="$(curl -fsSL "${{ secrets.BACKEND_ORIGIN }}/openapi.json" || true)"
+            if [ -z "$spec" ]; then
+              spec="$(curl -fsSL "${{ secrets.BACKEND_ORIGIN }}/api/openapi.json" || true)"
+            fi
+            if [ -n "$spec" ] && echo "$spec" | grep -q '"/api/scan/{scan_id}/certification-status"'; then
+              echo "Certification-status route present in OpenAPI spec."
+              exit 0
+            fi
+            echo "Route not visible yet (attempt $i), waiting for rollout..."
+            sleep 10
+          done
+          echo "Missing required route after rollout wait: /api/scan/{scan_id}/certification-status"
+          exit 1
 
       - name: Smoke check proof_panel in simulation response
         run: |
           payload='{"rtt_ms":180,"loss_rate":0.02}'
-          body="$(curl -fsSL -X POST "${{ secrets.BACKEND_ORIGIN }}/api/pqc/simulate" -H 'Content-Type: application/json' -d "$payload" || true)"
-          if [ -z "$body" ]; then
-            echo "Empty simulation response from backend."
-            exit 1
-          fi
-          if ! echo "$body" | grep -q '"proof_panel"'; then
-            echo "Missing required calculated_simulation_output.proof_panel in simulation response."
-            exit 1
-          fi
-          echo "proof_panel present in live simulation response."
+          for i in $(seq 1 20); do
+            body="$(curl -fsSL -X POST "${{ secrets.BACKEND_ORIGIN }}/api/pqc/simulate" -H 'Content-Type: application/json' -d "$payload" || true)"
+            if [ -n "$body" ] && echo "$body" | grep -q '"proof_panel"'; then
+              echo "proof_panel present in live simulation response."
+              exit 0
+            fi
+            echo "proof_panel not visible yet (attempt $i), waiting for rollout..."
+            sleep 10
+          done
+          echo "Missing required calculated_simulation_output.proof_panel after rollout wait."
+          exit 1
