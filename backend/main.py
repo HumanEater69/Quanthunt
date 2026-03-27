@@ -125,20 +125,41 @@ def _profile_domain_latency(domain: str) -> dict:
         "classical_tls_ms": 0.0,
         "error": None,
     }
-    try:
-        start_tcp = time.time()
-        sock = socket.create_connection((domain, 443), timeout=5)
-        out["rtt_ms"] = round((time.time() - start_tcp) * 1000, 2)
+    host_candidates = [domain]
+    if not domain.startswith("www."):
+        host_candidates.append(f"www.{domain}")
 
-        context = ssl.create_default_context()
-        start_tls = time.time()
-        ssock = context.wrap_socket(sock, server_hostname=domain)
-        out["classical_tls_ms"] = round((time.time() - start_tls) * 1000, 2)
-        ssock.close()
+    last_error = "profiling failed"
+    for host in host_candidates:
+        try:
+            start_tcp = time.time()
+            sock = socket.create_connection((host, 443), timeout=5)
+            out["rtt_ms"] = round((time.time() - start_tcp) * 1000, 2)
 
-        out["status"] = "success"
-    except Exception as exc:
-        out["error"] = str(exc)
+            # Prefer full certificate validation; if cert-chain validation fails,
+            # still measure handshake timing so exports remain usable.
+            context = ssl.create_default_context()
+            start_tls = time.time()
+            try:
+                ssock = context.wrap_socket(sock, server_hostname=host)
+            except ssl.SSLCertVerificationError:
+                sock.close()
+                sock = socket.create_connection((host, 443), timeout=5)
+                insecure_ctx = ssl.create_default_context()
+                insecure_ctx.check_hostname = False
+                insecure_ctx.verify_mode = ssl.CERT_NONE
+                start_tls = time.time()
+                ssock = insecure_ctx.wrap_socket(sock, server_hostname=host)
+            out["classical_tls_ms"] = round((time.time() - start_tls) * 1000, 2)
+            ssock.close()
+
+            out["status"] = "success"
+            out["error"] = None
+            return out
+        except Exception as exc:
+            last_error = str(exc) or "profiling failed"
+
+    out["error"] = last_error
     return out
 
 
