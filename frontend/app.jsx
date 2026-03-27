@@ -3411,6 +3411,8 @@ function ScannerTab({
                   <br />
                   - Strict Quantum-Resistance (Kyber/Dilithium) Enforcement
                   <br />- Full Certificate Revocation Path Analysis
+                  <br />- Scan method: active TLS handshake + passive metadata observation
+                  <br />- No endpoint agent installation required
                 </>
               ) : (
                 <>
@@ -3427,6 +3429,8 @@ function ScannerTab({
                   <br />
                   - Modern TLS 1.3 Adaptive Cipher Scoring
                   <br />- Standard Classical RSA/ECDSA Validation
+                  <br />- Scan method: active TLS handshake + passive metadata observation
+                  <br />- No endpoint agent installation required
                 </>
               )}
             </div>
@@ -4474,6 +4478,12 @@ function CBOMTab({ scanModel = "general" }) {
         nist_fips_203: props["nist-fips-203-signal-detected"] || "",
         nist_fips_204: props["nist-fips-204-signal-detected"] || "",
         nist_fips_205: props["nist-fips-205-signal-detected"] || "",
+        crypto_posture_class: props["crypto-posture-class"] || "",
+        key_exchange_family: props["key-exchange-family"] || "",
+        signature_algorithm: props["signature-algorithm"] || "",
+        signature_family: props["signature-family"] || "",
+        scan_methodology: props["scan-methodology"] || "",
+        agent_required: props["agent-required"] || "",
         tls_scan_error: props["tls-scan-error"] || "",
       };
     });
@@ -4794,6 +4804,35 @@ function CBOMTab({ scanModel = "general" }) {
       requirement: "Stateless Hash Signatures",
     },
   ];
+
+  const cbomComponents = Array.isArray(cbom?.components) ? cbom.components : [];
+  const cbomRows = cbomToCsvRows(cbom || {}, selectedScanId, selectedDomain || "");
+  const pqcCapableCount = cbomRows.filter(
+    (r) => String(r.crypto_posture_class || "").toLowerCase() === "pqc-capable",
+  ).length;
+  const classicalOnlyCount = cbomRows.filter(
+    (r) => String(r.crypto_posture_class || "").toLowerCase() === "classical-only",
+  ).length;
+  const unknownClassCount = Math.max(
+    0,
+    cbomRows.length - pqcCapableCount - classicalOnlyCount,
+  );
+  const avgHndlRisk = cbomRows.length
+    ? cbomRows.reduce((sum, row) => sum + Number(row.hndl_risk_score || 0), 0) /
+      cbomRows.length
+    : 0;
+  const executiveStatus =
+    pqcCapableCount > 0 && avgHndlRisk <= 60 && classicalOnlyCount === 0
+      ? "GREEN"
+      : "RED";
+  const executiveReason =
+    executiveStatus === "GREEN"
+      ? "PQC-capable posture observed with low average risk."
+      : classicalOnlyCount > 0
+        ? "Classical-only crypto posture remains present in observed assets."
+        : avgHndlRisk > 60
+          ? "Average HNDL risk is above executive acceptance threshold."
+          : "PQC signals are limited in observable metadata.";
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <Card style={{ padding: 16 }}>
@@ -4807,6 +4846,27 @@ function CBOMTab({ scanModel = "general" }) {
             "Compliance-friendly evidence",
           ]}
         />
+        <div
+          style={{
+            marginTop: 10,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            padding: 10,
+            background:
+              "linear-gradient(140deg, rgba(255,245,219,0.62), rgba(218,240,228,0.46))",
+            fontFamily: "JetBrains Mono",
+            fontSize: 11,
+            color: C.dim,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ color: C.blue, fontFamily: "Orbitron", fontSize: 11, marginBottom: 6 }}>
+            SCANNING TRANSPARENCY
+          </div>
+          - Scan mode: Active TLS handshake + passive certificate/header metadata observation
+          <br />- Agent required on bank systems: No
+          <br />- Safety note: No exploit payloads, no auth bypass attempts, no endpoint installation
+        </div>
         <details className="cbom-picker-shell" open>
           <summary className="cbom-picker-summary">
             Select scanned bank/domain ({scans.length})
@@ -4854,6 +4914,54 @@ function CBOMTab({ scanModel = "general" }) {
             </div>
           </div>
         </details>
+        {!!cbomComponents.length && (
+          <div
+            style={{
+              marginTop: 10,
+              border: `1px solid ${executiveStatus === "RED" ? C.red : C.green}`,
+              borderRadius: 12,
+              padding: 12,
+              background:
+                executiveStatus === "RED"
+                  ? "linear-gradient(145deg, rgba(155,30,40,0.16), rgba(120,20,30,0.1))"
+                  : "linear-gradient(145deg, rgba(36,133,86,0.18), rgba(24,94,62,0.11))",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,0.45), 0 10px 24px rgba(75,80,70,0.12)",
+              display: "grid",
+              gap: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ fontFamily: "Orbitron", color: executiveStatus === "RED" ? C.red : C.green, fontSize: 12 }}>
+                EXECUTIVE CRYPTO RISK STATUS: {executiveStatus}
+              </div>
+              <div style={{ color: C.text, fontFamily: "JetBrains Mono", fontSize: 11 }}>
+                Avg HNDL Risk: {avgHndlRisk.toFixed(2)}
+              </div>
+            </div>
+            <div style={{ color: C.dim, fontFamily: "JetBrains Mono", fontSize: 11 }}>
+              {executiveReason}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 8 }}>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
+                <div style={{ color: C.dim, fontSize: 10 }}>Assets Observed</div>
+                <div style={{ color: C.text, fontFamily: "Orbitron" }}>{cbomRows.length}</div>
+              </div>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
+                <div style={{ color: C.dim, fontSize: 10 }}>PQC-Capable</div>
+                <div style={{ color: C.green, fontFamily: "Orbitron" }}>{pqcCapableCount}</div>
+              </div>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
+                <div style={{ color: C.dim, fontSize: 10 }}>Classical-Only</div>
+                <div style={{ color: C.red, fontFamily: "Orbitron" }}>{classicalOnlyCount}</div>
+              </div>
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
+                <div style={{ color: C.dim, fontSize: 10 }}>Unknown Class</div>
+                <div style={{ color: C.orange, fontFamily: "Orbitron" }}>{unknownClassCount}</div>
+              </div>
+            </div>
+          </div>
+        )}
         <div
           style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}
         >
@@ -5002,6 +5110,70 @@ function CBOMTab({ scanModel = "general" }) {
       </Card>
       <Card style={{ padding: 16 }}>
         <div style={{ fontFamily: "Orbitron", color: C.blue, marginBottom: 8 }}>
+          <PressureText glow={C.blue}>Asset Crypto Classification</PressureText>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontFamily: "JetBrains Mono",
+              fontSize: 12,
+            }}
+          >
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Asset</th>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>TLS</th>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Cipher Suite</th>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Key Exchange</th>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Signature</th>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>PQC/FIPS Signals</th>
+                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cbomRows.length ? (
+                cbomRows.map((row) => {
+                  const signalCount = [row.nist_fips_203, row.nist_fips_204, row.nist_fips_205].filter(
+                    (v) => String(v).toLowerCase() === "true",
+                  ).length;
+                  const statusLabel =
+                    String(row.crypto_posture_class || "").toLowerCase() === "pqc-capable"
+                      ? "SAFE"
+                      : String(row.crypto_posture_class || "").toLowerCase() === "classical-only"
+                        ? "CRITICAL"
+                        : "WARNING";
+                  return (
+                    <tr
+                      key={`${row.asset_name}-${row.primary_cipher_suite}`}
+                      style={{ borderBottom: `1px solid ${C.border}` }}
+                    >
+                      <td style={{ padding: "8px 6px", color: C.text }}>{row.asset_name || "-"}</td>
+                      <td style={{ padding: "8px 6px", color: C.text }}>{row.tls_version || "unknown"}</td>
+                      <td style={{ padding: "8px 6px", color: C.text }}>{row.primary_cipher_suite || "unknown"}</td>
+                      <td style={{ padding: "8px 6px", color: C.text }}>{row.key_exchange_family || row.key_exchange_algorithm || "unknown"}</td>
+                      <td style={{ padding: "8px 6px", color: C.text }}>{row.signature_family || "unknown"}</td>
+                      <td style={{ padding: "8px 6px", color: C.dim }}>{signalCount}/3</td>
+                      <td style={{ padding: "8px 6px" }}>
+                        <Badge status={statusLabel} />
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={7} style={{ padding: "10px 6px", color: C.dim }}>
+                    Select a completed scan to view asset-level crypto classification.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card style={{ padding: 16 }}>
+        <div style={{ fontFamily: "Orbitron", color: C.blue, marginBottom: 8 }}>
           <PressureText glow={C.blue}>NIST PQC Compliance Mapping</PressureText>
         </div>
         <table
@@ -5060,19 +5232,24 @@ function CBOMTab({ scanModel = "general" }) {
         </table>
       </Card>
       <Card style={{ padding: 16 }}>
-        <pre
-          style={{
-            margin: 0,
-            whiteSpace: "pre-wrap",
-            color: C.text,
-            fontFamily: "JetBrains Mono",
-            fontSize: 12,
-          }}
-        >
-          {cbom
-            ? JSON.stringify(cbom, null, 2)
-            : "Select a completed scan to view CBOM."}
-        </pre>
+        <details>
+          <summary style={{ cursor: "pointer", color: C.dim, fontFamily: "JetBrains Mono", marginBottom: 8 }}>
+            View Raw CBOM JSON (technical)
+          </summary>
+          <pre
+            style={{
+              margin: 0,
+              whiteSpace: "pre-wrap",
+              color: C.text,
+              fontFamily: "JetBrains Mono",
+              fontSize: 12,
+            }}
+          >
+            {cbom
+              ? JSON.stringify(cbom, null, 2)
+              : "Select a completed scan to view CBOM."}
+          </pre>
+        </details>
       </Card>
     </div>
   );

@@ -19,6 +19,28 @@ def _key_exchange_algorithm(cipher_suite: str | None) -> str:
         return "RSA"
     return "unknown"
 
+
+def _key_exchange_family(cipher_suite: str | None) -> str:
+    c = (cipher_suite or "").upper()
+    has_pqc = any(x in c for x in ("MLKEM", "ML-KEM", "KYBER"))
+    has_classic = any(x in c for x in ("X25519", "X448", "ECDHE", "DHE", "ECDH", "RSA"))
+    if has_pqc and has_classic:
+        return "hybrid-pqc-classical"
+    if has_pqc:
+        return "pqc"
+    if has_classic:
+        return "classical"
+    return "unknown"
+
+
+def _signature_algorithm_family(sig_algo: str | None) -> str:
+    s = (sig_algo or "").upper()
+    if any(x in s for x in ("MLDSA", "ML-DSA", "DILITHIUM", "SLHDSA", "SLH-DSA", "SPHINCS")):
+        return "pqc"
+    if any(x in s for x in ("RSA", "ECDSA", "ED25519", "ED448", "SHA", "PKCS")):
+        return "classical"
+    return "unknown"
+
 def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
     components: list[dict[str, Any]] = []
     for f in findings:
@@ -32,6 +54,14 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
         pqc_detected = fips203 or fips204 or fips205
         pqc_label = "Quantum-Safe" if pqc_detected else "Classic-Secure"
         key_exchange_algo = _key_exchange_algorithm(f.tls.cipher_suite)
+        key_exchange_family = _key_exchange_family(f.tls.cipher_suite)
+        signature_family = _signature_algorithm_family(f.tls.cert_sig_algo)
+        if key_exchange_family == "hybrid-pqc-classical" or signature_family == "pqc":
+            posture_class = "pqc-capable"
+        elif key_exchange_family == "classical":
+            posture_class = "classical-only"
+        else:
+            posture_class = "unknown"
         components.append(
             {
                 "type": "cryptographic-asset",
@@ -54,8 +84,12 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
                     },
                     {"name": "hndl-risk-score", "value": str(f.hndl_risk_score)},
                     {"name": "pqc-posture-label", "value": pqc_label},
+                    {"name": "crypto-posture-class", "value": posture_class},
                     {"name": "key-exchange-algorithm", "value": key_exchange_algo},
+                    {"name": "key-exchange-family", "value": key_exchange_family},
                     {"name": "primary-cipher-suite", "value": f.tls.cipher_suite or "unknown"},
+                    {"name": "signature-algorithm", "value": f.tls.cert_sig_algo or "unknown"},
+                    {"name": "signature-family", "value": signature_family},
                     {"name": "tls-scan-error", "value": f.tls.scan_error or ""},
                     {"name": "nist-fips-203-signal-detected", "value": str(fips203).lower()},
                     {"name": "nist-fips-204-signal-detected", "value": str(fips204).lower()},
@@ -65,6 +99,11 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
                         "name": "pqc-detection-note",
                         "value": "Derived from observable TLS/certificate metadata; this is not formal cryptographic certification.",
                     },
+                    {
+                        "name": "scan-methodology",
+                        "value": "active-network-handshake-plus-passive-metadata",
+                    },
+                    {"name": "agent-required", "value": "false"},
                     {"name": "nist-pqc-ref", "value": "FIPS 203 (ML-KEM), FIPS 204 (ML-DSA), FIPS 205 (SLH-DSA)"},
                     {"name": "label", "value": pqc_label},
                     {"name": "hndl-label", "value": f.label},
@@ -76,6 +115,19 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
         "bomFormat": "CycloneDX",
         "specVersion": "1.6",
         "version": 1,
-        "metadata": {"component": {"name": domain, "type": "platform"}},
+        "metadata": {
+            "component": {"name": domain, "type": "platform"},
+            "properties": [
+                {
+                    "name": "scan-methodology",
+                    "value": "active-network-handshake-plus-passive-metadata",
+                },
+                {
+                    "name": "scan-methodology-note",
+                    "value": "No endpoint agent is installed; detection is based on externally observable TLS and certificate metadata.",
+                },
+                {"name": "agent-required", "value": "false"},
+            ],
+        },
         "components": components,
     }
