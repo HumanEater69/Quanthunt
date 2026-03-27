@@ -1099,12 +1099,30 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
     loss_rate = max(0.0, min(0.35, float(req.loss_rate)))
     baseline_override = req.baseline_ttfb_ms
     rows: list[dict[str, object]] = []
+    max_domains = max(1, int(os.getenv("PQC_FLEET_EXPORT_MAX_DOMAINS", "60")))
+    per_domain_timeout = max(
+        1.0, float(os.getenv("PQC_FLEET_EXPORT_DOMAIN_TIMEOUT_SEC", "6"))
+    )
+    concurrency = max(1, int(os.getenv("PQC_FLEET_EXPORT_CONCURRENCY", "8")))
 
-    for domain in valid_domains:
-        live = await asyncio.to_thread(_profile_domain_latency, domain)
-        if live.get("status") != "success":
-            rows.append(
-                {
+    domains_to_process = valid_domains[:max_domains]
+    skipped_domains = valid_domains[max_domains:]
+    sem = asyncio.Semaphore(concurrency)
+
+    async def build_row(domain: str) -> dict[str, object]:
+        async with sem:
+            try:
+                live = await asyncio.wait_for(
+                    asyncio.to_thread(_profile_domain_latency, domain),
+                    timeout=per_domain_timeout,
+                )
+            except asyncio.TimeoutError:
+                live = {"status": "failed", "error": "profiling timed out"}
+            except Exception as exc:
+                live = {"status": "failed", "error": str(exc) or "profiling failed"}
+
+            if live.get("status") != "success":
+                return {
                     "domain": domain,
                     "status": "failed",
                     "baseline_rtt_ms": "",
@@ -1115,24 +1133,22 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
                     "packet_loss_pct": round(loss_rate * 100, 2),
                     "error": str(live.get("error") or "profiling failed"),
                 }
-            )
-            continue
 
-        rtt = float(live.get("rtt_ms") or 0)
-        classical = _simulate_pqc_latency(rtt, 2500, loss_rate)
-        hybrid = _simulate_pqc_latency(rtt, 16800, loss_rate)
-        baseline_ttfb = (
-            float(baseline_override)
-            if baseline_override is not None
-            else float(classical["total_latency_ms"])
-        )
-        degradation_pct = (
-            ((float(hybrid["total_latency_ms"]) - baseline_ttfb) / baseline_ttfb) * 100
-            if baseline_ttfb > 0
-            else 0.0
-        )
-        rows.append(
-            {
+            rtt = float(live.get("rtt_ms") or 0)
+            classical = _simulate_pqc_latency(rtt, 2500, loss_rate)
+            hybrid = _simulate_pqc_latency(rtt, 16800, loss_rate)
+            baseline_ttfb = (
+                float(baseline_override)
+                if baseline_override is not None
+                else float(classical["total_latency_ms"])
+            )
+            degradation_pct = (
+                ((float(hybrid["total_latency_ms"]) - baseline_ttfb) / baseline_ttfb)
+                * 100
+                if baseline_ttfb > 0
+                else 0.0
+            )
+            return {
                 "domain": domain,
                 "status": "ok",
                 "baseline_rtt_ms": round(rtt, 2),
@@ -1143,6 +1159,22 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
                 "packet_loss_pct": round(loss_rate * 100, 2),
                 "error": "",
             }
+
+    rows = await asyncio.gather(*(build_row(domain) for domain in domains_to_process))
+    if skipped_domains:
+        rows.extend(
+            {
+                "domain": domain,
+                "status": "failed",
+                "baseline_rtt_ms": "",
+                "baseline_ttfb_ms": "",
+                "pqc_ttfb_ms": "",
+                "extra_flights": "",
+                "degradation_pct": "",
+                "packet_loss_pct": round(loss_rate * 100, 2),
+                "error": f"skipped to keep export responsive (max {max_domains} domains per request)",
+            }
+            for domain in skipped_domains
         )
 
     out = StringIO()

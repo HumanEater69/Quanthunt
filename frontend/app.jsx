@@ -2883,7 +2883,9 @@ function ScannerTab({
       });
     } catch {
       return setFlashMessage({
-        text: "?? BACKEND OFFLINE OR BLOCKED (CORS/NETWORK). SET API WITH ?api=https://your-backend-url",
+        text:
+          "- Backend offline or blocked (CORS/network).\n" +
+          "- Set API with ?api=https://your-backend-url",
         type: "error",
       });
     }
@@ -2896,7 +2898,7 @@ function ScannerTab({
             ? "Backend API not connected. Deploy FastAPI and open this app as ?api=https://your-backend-url"
             : "SCAN REJECTED BY MISSION CONTROL";
       return setFlashMessage({
-        text: `?? TRANSMISSION FAILED: ${detail}`,
+        text: `- Transmission failed\n- Reason: ${detail}`,
         type: "error",
       });
     }
@@ -2909,7 +2911,7 @@ function ScannerTab({
       if (!detail) {
         setPolling(false);
         setFlashMessage({
-          text: "?? PREVIOUS SCAN DATA CORRUPPTED. RETRYING...",
+          text: "- Previous scan data corrupted\n- Please retry the scan",
           type: "error",
         });
         return;
@@ -2936,7 +2938,10 @@ function ScannerTab({
       /[^a-zA-Z0-9.-]/.test(target)
     ) {
       setFlashMessage({
-        text: "?? DOMAIN REJECTED! \n UNIDENTIFIED TRANSMISSION PATTERN. RECTIFY INPUT.",
+        text:
+          "- Domain rejected\n" +
+          "- Enter a valid hostname (example: pnb.bank.in)\n" +
+          "- Remove spaces/special characters",
         type: "error",
       });
       return;
@@ -2983,7 +2988,7 @@ function ScannerTab({
           setPolling(false);
           if (d.scan.status === "failed") {
             setFlashMessage({
-              text: "? SCAN ENGINE CRITICAL FAILURE.",
+              text: "- Scan engine critical failure",
               type: "error",
             });
           }
@@ -3115,7 +3120,7 @@ function ScannerTab({
           : d?.detail?.message || "Batch scan failed.";
       setFlashMessage({
         type: "error",
-        text: `?? FLEET SCAN FAILED: ${detail}`,
+        text: `- Fleet scan failed\n- Reason: ${detail}`,
       });
       return;
     }
@@ -3268,8 +3273,9 @@ function ScannerTab({
               fontFamily: "JetBrains Mono",
               fontSize: 13,
               display: "flex",
-              alignItems: "center",
+              alignItems: flashMessage.centered ? "flex-start" : "center",
               gap: 12,
+              lineHeight: 1.45,
               backdropFilter: flashMessage.centered ? "blur(22px) saturate(1.15)" : undefined,
               WebkitBackdropFilter: flashMessage.centered ? "blur(22px) saturate(1.15)" : undefined,
               boxShadow: flashMessage.centered
@@ -3278,8 +3284,8 @@ function ScannerTab({
               animation: "pulse 2s infinite",
             }}
           >
-            <span style={{ fontSize: 20 }}>
-              {flashMessage.type === "error" ? "??" : "?"}
+            <span style={{ fontSize: 16, marginTop: flashMessage.centered ? 2 : 0 }}>
+              {flashMessage.type === "error" ? "-" : "*"}
             </span>
             <span style={{ whiteSpace: "pre-line" }}>{flashMessage.text}</span>
           </div>
