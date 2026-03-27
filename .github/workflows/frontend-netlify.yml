@@ -58,27 +58,27 @@ jobs:
       - name: Install Netlify CLI
         run: npm install --global netlify-cli@latest
 
-      - name: Deploy frontend to Netlify production
-        id: deploy_cli
-        continue-on-error: true
+      - name: Deploy frontend to Netlify production (CLI or hook fallback)
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_DEPLOY_HOOK: ${{ secrets.NETLIFY_DEPLOY_HOOK }}
         run: |
-          if [ -z "$NETLIFY_AUTH_TOKEN" ] || [ -z "$NETLIFY_SITE_ID" ]; then
-            echo "Token-based deploy credentials are missing; will try deploy hook fallback."
-            exit 1
+          if [ -n "$NETLIFY_AUTH_TOKEN" ] && [ -n "$NETLIFY_SITE_ID" ]; then
+            if netlify deploy --prod --dir frontend --message "GitHub Actions production deploy"; then
+              echo "CLI deploy succeeded."
+              exit 0
+            fi
+            echo "CLI deploy failed; trying deploy hook fallback..."
           fi
-          netlify deploy --prod --dir frontend --message "GitHub Actions production deploy"
 
-      - name: Fallback deploy via Netlify hook
-        if: ${{ steps.deploy_cli.outcome != 'success' }}
-        run: |
-          if [ -z "${{ secrets.NETLIFY_DEPLOY_HOOK }}" ]; then
+          if [ -z "$NETLIFY_DEPLOY_HOOK" ]; then
             echo "NETLIFY_DEPLOY_HOOK is missing, cannot fallback deploy."
             exit 1
           fi
-          curl -fsS -X POST "${{ secrets.NETLIFY_DEPLOY_HOOK }}"
+
+          curl -fsS -X POST "$NETLIFY_DEPLOY_HOOK"
+          echo "Deploy hook triggered."
 
       - name: Probe custom domain readiness
         env:
