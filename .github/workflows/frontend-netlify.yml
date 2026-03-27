@@ -46,28 +46,39 @@ jobs:
 
       - name: Validate Netlify secrets
         run: |
-          if [ -z "${{ secrets.NETLIFY_AUTH_TOKEN }}" ]; then
-            echo "Missing NETLIFY_AUTH_TOKEN in repository secrets."
-            exit 1
-          fi
-          if [ -z "${{ secrets.NETLIFY_SITE_ID }}" ]; then
-            echo "Missing NETLIFY_SITE_ID in repository secrets."
-            exit 1
-          fi
           if [ -z "${{ secrets.NETLIFY_SITE_URL }}" ]; then
             echo "Missing NETLIFY_SITE_URL in repository secrets."
             exit 1
           fi
+          if [ -z "${{ secrets.NETLIFY_DEPLOY_HOOK }}" ] && { [ -z "${{ secrets.NETLIFY_AUTH_TOKEN }}" ] || [ -z "${{ secrets.NETLIFY_SITE_ID }}" ]; }; then
+            echo "Missing deploy credentials. Provide NETLIFY_DEPLOY_HOOK, or both NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID."
+            exit 1
+          fi
 
       - name: Install Netlify CLI
+        if: ${{ secrets.NETLIFY_AUTH_TOKEN != '' && secrets.NETLIFY_SITE_ID != '' }}
         run: npm install --global netlify-cli@latest
 
       - name: Deploy frontend to Netlify production
+        id: deploy_cli
+        if: ${{ secrets.NETLIFY_AUTH_TOKEN != '' && secrets.NETLIFY_SITE_ID != '' }}
+        continue-on-error: true
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           netlify deploy --prod --dir frontend --message "GitHub Actions production deploy"
+
+      - name: Fallback deploy via Netlify hook
+        if: ${{ (steps.deploy_cli.outcome != 'success' || steps.deploy_cli.outcome == '') && secrets.NETLIFY_DEPLOY_HOOK != '' }}
+        run: |
+          curl -fsS -X POST "${{ secrets.NETLIFY_DEPLOY_HOOK }}"
+
+      - name: Fail if no deploy path succeeded
+        if: ${{ (steps.deploy_cli.outcome != 'success' || steps.deploy_cli.outcome == '') && secrets.NETLIFY_DEPLOY_HOOK == '' }}
+        run: |
+          echo "Token-based deploy failed (or skipped) and NETLIFY_DEPLOY_HOOK is missing."
+          exit 1
 
       - name: Probe custom domain readiness
         env:
