@@ -64,12 +64,30 @@ jobs:
         run: npm install --global @railway/cli@latest
 
       - name: Trigger backend deployment (Railway native)
+        id: railway_native_trigger
         if: ${{ steps.deploy_mode.outputs.railway_native == 'true' }}
+        continue-on-error: true
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT_ID }}" --service "${{ secrets.RAILWAY_SERVICE_ID }}"
           railway redeploy --service "${{ secrets.RAILWAY_SERVICE_ID }}" --yes
+
+      - name: Fallback backend deployment (hook after Railway failure)
+        if: ${{ steps.deploy_mode.outputs.railway_native == 'true' && steps.railway_native_trigger.outcome == 'failure' }}
+        run: |
+          echo "Railway native redeploy failed, attempting BACKEND_DEPLOY_HOOK_URL fallback."
+          if [ -z "${{ secrets.BACKEND_DEPLOY_HOOK_URL }}" ]; then
+            echo "Missing BACKEND_DEPLOY_HOOK_URL for fallback deployment."
+            exit 1
+          fi
+          code="$(curl -sk -o /dev/null -w '%{http_code}' -X POST "${{ secrets.BACKEND_DEPLOY_HOOK_URL }}" || true)"
+          if [ "$code" = "200" ] || [ "$code" = "201" ] || [ "$code" = "202" ]; then
+            echo "Fallback deploy hook accepted (HTTP $code)."
+          else
+            echo "Fallback deploy hook failed (HTTP $code)."
+            exit 1
+          fi
 
       - name: Trigger backend deployment (generic hook)
         if: ${{ steps.deploy_mode.outputs.railway_native != 'true' }}
@@ -114,3 +132,17 @@ jobs:
             exit 1
           fi
           echo "Certification-status route present in OpenAPI spec."
+
+      - name: Smoke check proof_panel in simulation response
+        run: |
+          payload='{"rtt_ms":180,"loss_rate":0.02}'
+          body="$(curl -fsSL -X POST "${{ secrets.BACKEND_ORIGIN }}/api/pqc/simulate" -H 'Content-Type: application/json' -d "$payload" || true)"
+          if [ -z "$body" ]; then
+            echo "Empty simulation response from backend."
+            exit 1
+          fi
+          if ! echo "$body" | grep -q '"proof_panel"'; then
+            echo "Missing required calculated_simulation_output.proof_panel in simulation response."
+            exit 1
+          fi
+          echo "proof_panel present in live simulation response."
