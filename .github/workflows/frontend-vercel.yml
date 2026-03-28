@@ -26,8 +26,25 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Deploy to Vercel (Production)
+        id: deploy
         working-directory: frontend
-        run: vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          deployment_url=$(vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }} | tail -n 1 | tr -d '\r')
+          echo "deployment_url=${deployment_url}" >> "$GITHUB_OUTPUT"
+          echo "Deployment URL: ${deployment_url}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Alias Custom Domain
+        working-directory: frontend
+        run: vercel alias set "${{ steps.deploy.outputs.deployment_url }}" quanthunt.vercel.com --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Verify Custom Domain
+        run: curl -I https://quanthunt.vercel.com
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
