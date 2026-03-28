@@ -8335,6 +8335,21 @@ function PQCLatencyTab({ scanModel = "general" }) {
         },
       };
 
+  const darkTheme = isDarkTheme();
+  const latencyPanelA = darkTheme
+    ? "linear-gradient(145deg, rgba(68,88,100,0.66), rgba(56,78,94,0.62))"
+    : "linear-gradient(145deg, rgba(244,232,209,0.58), rgba(214,230,215,0.52))";
+  const latencyPanelB = darkTheme
+    ? "linear-gradient(145deg, rgba(60,82,98,0.66), rgba(70,90,105,0.62))"
+    : "linear-gradient(145deg, rgba(214,230,215,0.52), rgba(244,232,209,0.58))";
+  const latencyPanelC = darkTheme
+    ? "linear-gradient(145deg, rgba(64,88,102,0.66), rgba(54,78,96,0.62))"
+    : "linear-gradient(145deg, rgba(255,245,214,0.56), rgba(219,241,229,0.48))";
+  const latencyChipBg = darkTheme ? "rgba(42,59,75,0.7)" : "rgba(255,255,255,0.28)";
+  const latencyTitleColor = darkTheme ? "#c3d3c4" : C.dim;
+  const latencyTextColor = darkTheme ? "#e8f0e7" : C.text;
+  const latencySubtleColor = darkTheme ? "#d2dfd4" : C.dim;
+
   const headline = remoteMetrics?.headline_metrics || {
     absolute_latency_delta_ms: 0,
     latency_degradation_percentage: 0,
@@ -8853,15 +8868,14 @@ function PQCLatencyTab({ scanModel = "general" }) {
             border: `1px solid ${C.border}`,
             borderRadius: 14,
             padding: 12,
-            background:
-              "linear-gradient(145deg, rgba(244,232,209,0.58), rgba(214,230,215,0.52))",
+            background: latencyPanelA,
             boxShadow:
               "inset 0 1px 0 rgba(255,255,255,0.8), 0 12px 24px rgba(106,95,70,0.12)",
           }}
         >
           <div
             style={{
-              color: C.dim,
+              color: latencyTitleColor,
               fontFamily: "JetBrains Mono",
               fontSize: 10,
               marginBottom: 6,
@@ -8896,7 +8910,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               target_domain:{" "}
@@ -8907,7 +8922,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               endpoint_category:{" "}
@@ -8919,7 +8935,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               current_cipher_suite:{" "}
@@ -8931,7 +8948,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               measured_rtt_ms:{" "}
@@ -8944,7 +8962,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               baseline_ttfb_ms:{" "}
@@ -8957,7 +8976,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               estimated_packet_loss_pct:{" "}
@@ -8972,7 +8992,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               hybrid_latency_degradation:{" "}
@@ -8987,7 +9008,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               detected_network_type: {networkStatus?.network?.type || "unknown"}
@@ -8997,7 +9019,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               ip: {networkStatus?.network?.ip || networkStatus?.ip || "unknown"}
@@ -9007,7 +9030,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               vpn_status: {networkStatus?.vpn_detected ? "detected" : "not detected"}
@@ -9020,8 +9044,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
             border: `1px solid ${C.border}`,
             borderRadius: 14,
             padding: 12,
-            background:
-              "linear-gradient(145deg, rgba(214,230,215,0.52), rgba(244,232,209,0.58))",
+            background: latencyPanelB,
             boxShadow:
               "inset 0 1px 0 rgba(255,255,255,0.8), 0 12px 24px rgba(106,95,70,0.1)",
             display: "grid",
@@ -9029,7 +9052,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
           }}
         >
           <div
-            style={{ color: C.dim, fontFamily: "JetBrains Mono", fontSize: 10 }}
+            style={{ color: latencyTitleColor, fontFamily: "JetBrains Mono", fontSize: 10 }}
           >
             HEADLINE METRICS (ANALYSIS)
           </div>
@@ -9047,7 +9070,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               absolute_latency_delta_ms:{" "}
@@ -9058,7 +9082,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               latency_degradation_percentage:{" "}
@@ -9069,7 +9094,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               risk_categorization:{" "}
@@ -9080,7 +9106,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 border: `1px solid ${C.border}`,
                 borderRadius: 10,
                 padding: "6px 8px",
-                background: "rgba(255,255,255,0.28)",
+                background: latencyChipBg,
+                color: latencyTextColor,
               }}
             >
               thresholds(ms): Safe &lt; 100 | Warning 100-300 | Critical &gt;
@@ -9094,15 +9121,14 @@ function PQCLatencyTab({ scanModel = "general" }) {
             border: `1px solid ${C.border}`,
             borderRadius: 14,
             padding: 12,
-            background:
-              "linear-gradient(145deg, rgba(255,245,214,0.56), rgba(219,241,229,0.48))",
+            background: latencyPanelC,
             boxShadow:
               "inset 0 1px 0 rgba(255,255,255,0.8), 0 12px 24px rgba(106,95,70,0.1)",
             display: "grid",
             gap: 8,
           }}
         >
-          <div style={{ color: C.dim, fontFamily: "JetBrains Mono", fontSize: 10 }}>
+          <div style={{ color: latencyTitleColor, fontFamily: "JetBrains Mono", fontSize: 10 }}>
             LATENCY PROOF PANEL
           </div>
           <div
@@ -9114,29 +9140,29 @@ function PQCLatencyTab({ scanModel = "general" }) {
               fontSize: 11,
             }}
           >
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: "rgba(255,255,255,0.28)" }}>
-              <div style={{ color: C.dim, marginBottom: 4 }}>Baseline RTT (ms)</div>
-              <div style={{ color: C.text }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: latencyChipBg }}>
+              <div style={{ color: latencySubtleColor, marginBottom: 4 }}>Baseline RTT (ms)</div>
+              <div style={{ color: latencyTextColor }}>
                 Current ping = {baselineRttDisplay.toFixed(2)} ms
               </div>
             </div>
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: "rgba(255,255,255,0.28)" }}>
-              <div style={{ color: C.dim, marginBottom: 4 }}>TCP Segments Required</div>
-              <div style={{ color: C.text }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: latencyChipBg }}>
+              <div style={{ color: latencySubtleColor, marginBottom: 4 }}>TCP Segments Required</div>
+              <div style={{ color: latencyTextColor }}>
                 ceil(S_TLS/MSS) = ceil({hybridPayloadForMath}/{MSS}) = {hybridSegmentsDisplay}
               </div>
             </div>
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: "rgba(255,255,255,0.28)" }}>
-              <div style={{ color: C.dim, marginBottom: 4 }}>Extra TCP Flights</div>
-              <div style={{ color: C.text }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: latencyChipBg }}>
+              <div style={{ color: latencySubtleColor, marginBottom: 4 }}>Extra TCP Flights</div>
+              <div style={{ color: latencyTextColor }}>
                 {hybridSegmentsDisplay > IW
                   ? `N_seg(${hybridSegmentsDisplay}) > iw(${IW}) -> extra_flights = ${extraFlightsDisplay}`
                   : `N_seg(${hybridSegmentsDisplay}) <= iw(${IW}) -> extra_flights = 0`}
               </div>
             </div>
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: "rgba(255,255,255,0.28)" }}>
-              <div style={{ color: C.dim, marginBottom: 4 }}>Latency Degradation %</div>
-              <div style={{ color: C.text }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: latencyChipBg }}>
+              <div style={{ color: latencySubtleColor, marginBottom: 4 }}>Latency Degradation %</div>
+              <div style={{ color: latencyTextColor }}>
                 (({hybridTtfbDisplay.toFixed(2)} - {baselineTtfbDisplay.toFixed(2)}) / {baselineTtfbDisplay > 0 ? baselineTtfbDisplay.toFixed(2) : "baseline"}) x 100 = {latencyDegradationDisplay.toFixed(2)}%
               </div>
             </div>
