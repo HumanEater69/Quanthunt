@@ -15,28 +15,56 @@ def classify_key_exchange(
     tls_version: str | None = None,
     host: str | None = None,
     scan_model: str = "general",
+    key_exchange_group: str | None = None,
+    named_group_ids: list[str] | None = None,
+    cipher_components: dict | None = None,
+    supported_cipher_analysis: list[dict] | None = None,
 ) -> str:
     c = (cipher or "").upper()
     v = (tls_version or "").upper()
-    h = (host or "").lower()
-    model = (scan_model or "general").lower()
+    group = (key_exchange_group or "").upper()
+    group_ids = [str(x).upper() for x in (named_group_ids or [])]
+    component_kx = str((cipher_components or {}).get("key_exchange") or "").upper()
+    supported_text = " ".join(
+        str((row or {}).get("suite") or "") + " " + str((row or {}).get("key_exchange") or "")
+        for row in (supported_cipher_analysis or [])
+    ).upper()
+    signal_blob = " ".join([c, group, component_kx, supported_text, " ".join(group_ids)])
 
-    if model == "general" and ("google.com" in h or h.endswith(".google")):
-        if "TLS_AES_256_GCM" in c or "TLS_CHACHA20" in c:
+    has_pqc = any(
+        x in signal_blob
+        for x in (
+            "MLKEM",
+            "ML-KEM",
+            "KYBER",
+            "X25519MLKEM",
+            "SECP256R1MLKEM",
+            "0X11EC",
+            "0X11ED",
+        )
+    )
+    has_classic = any(
+        x in signal_blob
+        for x in (
+            "ECDHE",
+            "DHE",
+            "ECDH",
+            "X25519",
+            "X448",
+            "RSA",
+            "SECP256R1",
+            "P-256",
+            "P-384",
+        )
+    )
 
-            return "ACCEPTABLE"
-        if "ECDHE" in c:
-            return "ACCEPTABLE"
-
-    if any(x in c for x in ["MLKEM", "KYBER"]):
-        return "SAFE"
-    if "X25519" in c and any(x in c for x in ["MLKEM", "KYBER"]):
+    if has_pqc and has_classic:
         return "ACCEPTABLE"
+    if has_pqc:
+        return "SAFE"
     if "TLS_RSA" in c or "_RSA_" in c:
         return "CRITICAL"
-    if any(x in c for x in ["ECDHE", "DHE", "ECDH", "X25519", "X448"]):
-        if model == "banking" and "1.2" in v:
-            return "CRITICAL"
+    if any(x in signal_blob for x in ["ECDHE", "DHE", "ECDH", "X25519", "X448", "(EC)DHE"]):
         return "WARNING"
 
     if "1.3" in v:
@@ -45,21 +73,95 @@ def classify_key_exchange(
         return "CRITICAL"
     return "WARNING"
 
+
+def _pqc_signal_flags(
+    cipher: str | None,
+    key_exchange_group: str | None,
+    named_group_ids: list[str] | None,
+    supported_cipher_analysis: list[dict] | None,
+    cert_sig_algo: str | None = None,
+) -> dict[str, bool]:
+    c = (cipher or "").upper()
+    group = (key_exchange_group or "").upper()
+    group_ids = [str(x).upper() for x in (named_group_ids or [])]
+    supported_text = " ".join(
+        str((row or {}).get("suite") or "") + " " + str((row or {}).get("key_exchange") or "")
+        for row in (supported_cipher_analysis or [])
+    ).upper()
+    sig = (cert_sig_algo or "").upper()
+    blob = " ".join([c, group, " ".join(group_ids), supported_text, sig])
+
+    has_fips203 = any(x in blob for x in ("MLKEM", "ML-KEM", "KYBER", "X25519MLKEM", "SECP256R1MLKEM", "0X11EC", "0X11ED"))
+    has_fips204 = any(x in sig for x in ("MLDSA", "ML-DSA", "DILITHIUM"))
+    has_fips205 = any(x in sig for x in ("SLHDSA", "SLH-DSA", "SPHINCS"))
+
+    has_classical = any(
+        x in blob
+        for x in (
+            "RSA",
+            "ECDHE",
+            "DHE",
+            "ECDH",
+            "X25519",
+            "X448",
+            "SECP256R1",
+            "P-256",
+            "P-384",
+        )
+    )
+    has_hybrid = has_fips203 and has_classical
+    has_pure_pqc = (has_fips203 or has_fips204 or has_fips205) and not has_classical
+
+    return {
+        "fips203": has_fips203,
+        "fips204": has_fips204,
+        "fips205": has_fips205,
+        "hybrid": has_hybrid,
+        "pure_pqc": has_pure_pqc,
+        "classical": has_classical,
+    }
+
+
+def decision_tree_label(
+    tls: TLSInfo,
+    key_exchange_status: str,
+) -> str:
+    version = (tls.tls_version or "").upper()
+    if tls.scan_error or not version:
+        return "Scan Failed/Unknown"
+
+    if "1.0" in version or "1.1" in version:
+        return "Critical Vulnerability"
+
+    flags = _pqc_signal_flags(
+        tls.cipher_suite,
+        tls.key_exchange_group,
+        tls.named_group_ids,
+        tls.supported_cipher_analysis,
+        cert_sig_algo=tls.cert_sig_algo,
+    )
+
+    if "1.3" in version and flags["hybrid"]:
+        return "Quantum-Resilient (Hybrid)"
+
+    if flags["pure_pqc"]:
+        return "Quantum-Safe (NIST Compliant)"
+
+    if "1.2" in version or "1.3" in version:
+        if key_exchange_status in {"CRITICAL", "WARNING"}:
+            return "Quantum-Vulnerable (HNDL Risk)"
+
+    return "Quantum-Vulnerable (HNDL Risk)"
+
 def classify_auth(tls: TLSInfo, api: APIInfo, scan_model: str = "general") -> str:
     sig = (tls.cert_sig_algo or "").upper()
-    h = (tls.host or "").lower()
-    model = (scan_model or "general").lower()
-
-    if model == "general" and ("google.com" in h or "cloudflare.com" in h):
-        if tls.tls_version == "TLSv1.3":
-            return "ACCEPTABLE"
 
     if any(a in sig for a in ["MLDSA", "DILITHIUM", "SLHDSA", "SPHINCS"]):
         return "SAFE"
     if any(a in sig for a in ["RSA", "ECDSA", "DSA", "EDDSA", "ED25519"]):
-        return "CRITICAL"
+        return "WARNING"
     if any(jwt in {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"} for jwt in api.jwt_algorithms):
-        return "CRITICAL"
+        return "WARNING"
     return "WARNING"
 
 def classify_tls_version(version: str | None) -> str:
@@ -108,30 +210,35 @@ def hndl_score(
     cert_sig_algo: str | None = None,
     cert_not_before: str | None = None,
     cert_not_after: str | None = None,
+    cert_public_key_bits: int | None = None,
 ) -> float:
-    model = (scan_model or "general").lower()
-    weights = (
-        {"key_exchange": 0.50, "auth": 0.25, "tls": 0.15, "cert": 0.07, "symmetric": 0.03}
-        if model == "banking"
-        else {"key_exchange": 0.45, "auth": 0.25, "tls": 0.15, "cert": 0.10, "symmetric": 0.05}
-    )
-    score = (
-        WEIGHT[key_exchange] * weights["key_exchange"]
-        + WEIGHT[auth] * weights["auth"]
-        + WEIGHT[tls_version] * weights["tls"]
-        + WEIGHT[cert_algo] * weights["cert"]
-        + WEIGHT[symmetric] * weights["symmetric"]
-    )
-
-    if model != "banking" and not _is_banking_host(host):
-        score = score * 0.70
-
     cipher_up = (cipher_suite or "").upper()
-    sig_up = (cert_sig_algo or "").upper()
-    rsa_in_use = "_RSA_" in cipher_up or "TLS_RSA" in cipher_up or "RSA" in sig_up
-    if rsa_in_use:
-        # Long-term RSA auth/key-establishment materially increases harvest-now/decrypt-later risk.
-        score += 8
+
+    # 50% Key Exchange risk.
+    if key_exchange == "SAFE":
+        kex_score = 0.0
+    elif key_exchange == "ACCEPTABLE":
+        kex_score = 10.0
+    elif "TLS_RSA" in cipher_up or "_RSA_" in cipher_up:
+        kex_score = 100.0
+    else:
+        kex_score = 70.0
+
+    # 20% key-size risk (certificate public key length proxy).
+    bits = int(cert_public_key_bits or 0)
+    if bits <= 0:
+        keylen_score = 65.0
+    elif bits <= 2048:
+        keylen_score = 85.0
+    elif bits <= 3072:
+        keylen_score = 55.0
+    elif bits <= 4096:
+        keylen_score = 35.0
+    else:
+        keylen_score = 20.0
+
+    # 15% certificate validity risk (longer-lived certs increase HNDL risk window).
+    cert_validity_score = 60.0
 
     def _parse_cert_dt(value: str | None) -> datetime | None:
         if not value:
@@ -147,12 +254,34 @@ def hndl_score(
     not_after = _parse_cert_dt(cert_not_after)
     if not_before and not_after and not_after > not_before:
         validity_days = (not_after - not_before).days
-        if validity_days > 397:
-            score += 5
-        elif validity_days > 365:
-            score += 3
-        if rsa_in_use and validity_days > 365:
-            score += 4
+        if validity_days <= 90:
+            cert_validity_score = 10.0
+        elif validity_days <= 180:
+            cert_validity_score = 25.0
+        elif validity_days <= 397:
+            cert_validity_score = 45.0
+        elif validity_days <= 730:
+            cert_validity_score = 80.0
+        else:
+            cert_validity_score = 95.0
+
+    # 15% TLS protocol risk.
+    v = (tls_version or "").upper()
+    if not v or "UNKNOWN" in v or "1.0" in v or "1.1" in v:
+        tls_proto_score = 100.0
+    elif "1.2" in v:
+        tls_proto_score = 60.0
+    elif "1.3" in v:
+        tls_proto_score = 20.0
+    else:
+        tls_proto_score = 60.0
+
+    score = (
+        (kex_score * 0.50)
+        + (keylen_score * 0.20)
+        + (cert_validity_score * 0.15)
+        + (tls_proto_score * 0.15)
+    )
 
     return round(min(max(score, 0.0), 100.0), 2)
 
@@ -161,10 +290,10 @@ def label_for_score(score: float, scan_model: str = "general") -> str:
     safe_threshold = 50 if model == "banking" else 60
     ready_threshold = 70 if model == "banking" else 80
     if score <= safe_threshold:
-        return "Quantum-Safe"
+        return "Quantum-Safe (NIST Compliant)"
     if score <= ready_threshold:
-        return "PQC Ready"
-    return "CRITICAL EXPOSURE"
+        return "Quantum-Resilient (Hybrid)"
+    return "Quantum-Vulnerable (HNDL Risk)"
 
 def recommendations_for_status(score: float, scan_model: str = "general") -> list[str]:
     model = (scan_model or "general").lower()

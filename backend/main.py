@@ -116,6 +116,33 @@ VPN_NETWORK_KEYWORDS = {
 _VPN_CACHE: dict[str, tuple[float, bool, str]] = {}
 FLEET_MAX_DOMAINS = 350
 FLEET_BACKEND_INSTANT_THRESHOLD = 5
+PQC_PROFILE_ORDER = ("pass", "hybrid", "fail")
+PQC_PROFILE_CONFIG: dict[str, dict[str, float | int | str]] = {
+    # pass: optimized, standards-aligned ML-KEM rollout with no expected HRR penalty.
+    "pass": {
+        "display": "Passed",
+        "payload_bytes": 9600,
+        "crypto_ms": 7.0,
+        "hrr_rtt_factor": 0.0,
+        "loss_multiplier": 0.9,
+    },
+    # hybrid: transition mode, moderate overhead with occasional HRR-style penalty.
+    "hybrid": {
+        "display": "Hybrid",
+        "payload_bytes": 16800,
+        "crypto_ms": 10.0,
+        "hrr_rtt_factor": 0.25,
+        "loss_multiplier": 1.0,
+    },
+    # fail: degraded migration path (e.g., repeated HRR/fallback and payload bloat).
+    "fail": {
+        "display": "Fail",
+        "payload_bytes": 24200,
+        "crypto_ms": 15.0,
+        "hrr_rtt_factor": 1.0,
+        "loss_multiplier": 1.35,
+    },
+}
 
 
 def _profile_domain_latency(domain: str) -> dict:
@@ -171,27 +198,64 @@ def _simulate_pqc_latency(
     mss: int = 1460,
     iw: int = 10,
     crypto_ms: float = 5.0,
+    hrr_rtt_factor: float = 0.0,
+    loss_multiplier: float = 1.0,
 ) -> dict:
     n_seg = max(1, math.ceil(payload_size / mss))
     flights = 0 if n_seg <= iw else math.ceil(math.log2((n_seg / iw) + 1))
     t_prop = rtt_ms * (2 + flights)
-    p_success = (1 - loss_rate) ** n_seg
+    expected_hrr_ms = max(0.0, hrr_rtt_factor) * rtt_ms
+    effective_loss = max(0.0, min(0.6, loss_rate * max(0.1, loss_multiplier)))
+    p_success = (1 - effective_loss) ** n_seg
     if p_success <= 0:
         p_success = 0.0001
+    # RFC 6298 first-sample form collapses to approx max(min_rto, 3*RTT).
     rto = max(min_rto, 3 * rtt_ms)
     t_loss = ((1 - p_success) / p_success) * rto
-    total_ttfb = t_prop + t_loss + crypto_ms
+    total_ttfb = t_prop + expected_hrr_ms + t_loss + crypto_ms
     return {
         "payload_size": payload_size,
         "segments": n_seg,
         "extra_flights": flights,
         "t_prop_ms": round(t_prop, 2),
+        "expected_hrr_ms": round(expected_hrr_ms, 2),
+        "effective_loss_rate": round(effective_loss, 6),
         "p_success": round(p_success, 6),
         "rto_ms": round(rto, 2),
         "t_loss_ms": round(t_loss, 2),
         "crypto_ms": round(crypto_ms, 2),
         "total_latency_ms": round(total_ttfb, 2),
     }
+
+
+def _profile_simulation(
+    profile: str,
+    rtt_ms: float,
+    loss_rate: float,
+    min_rto: float,
+    mss: int,
+    iw: int,
+) -> dict:
+    cfg = PQC_PROFILE_CONFIG[profile]
+    return _simulate_pqc_latency(
+        rtt_ms,
+        int(cfg["payload_bytes"]),
+        loss_rate,
+        min_rto=min_rto,
+        mss=mss,
+        iw=iw,
+        crypto_ms=float(cfg["crypto_ms"]),
+        hrr_rtt_factor=float(cfg["hrr_rtt_factor"]),
+        loss_multiplier=float(cfg["loss_multiplier"]),
+    )
+
+
+def _latency_state(total_ttfb_ms: float) -> str:
+    if total_ttfb_ms < 140:
+        return "pass"
+    if total_ttfb_ms <= 280:
+        return "hybrid"
+    return "fail"
 
 
 def _certificate_eligibility(scan: dict) -> tuple[bool, list[str], float]:
@@ -637,9 +701,8 @@ def _sync_asset_labels_for_scan(session, scan_id: str) -> list[Asset]:
         session.execute(select(Asset).where(Asset.scan_id == scan_id)).scalars().all()
     )
     for asset in assets:
-        expected = readiness_label(float(asset.risk_score or 0))
-        if asset.label != expected:
-            asset.label = expected
+        if not str(asset.label or "").strip():
+            asset.label = readiness_label(float(asset.risk_score or 0))
     return assets
 
 
@@ -963,8 +1026,6 @@ async def pqc_simulate(req: PqcSimRequest) -> dict:
     mss = 1460
     iw = 10
     min_rto = 200.0
-    classical_size = 2500
-    hybrid_size = 16800
 
     live = {
         "status": "skipped",
@@ -989,45 +1050,63 @@ async def pqc_simulate(req: PqcSimRequest) -> dict:
         else:
             rtt = float(live["rtt_ms"])
 
-    classical = _simulate_pqc_latency(
-        rtt, classical_size, loss_rate, min_rto=min_rto, mss=mss, iw=iw, crypto_ms=5.0
-    )
-    hybrid = _simulate_pqc_latency(
-        rtt, hybrid_size, loss_rate, min_rto=min_rto, mss=mss, iw=iw, crypto_ms=5.0
-    )
+    simulations = {
+        profile_name: _profile_simulation(
+            profile_name,
+            float(rtt),
+            loss_rate,
+            min_rto=min_rto,
+            mss=mss,
+            iw=iw,
+        )
+        for profile_name in PQC_PROFILE_ORDER
+    }
+    selected = simulations[req.profile]
+    passed = simulations["pass"]
 
-    increase_pct_classical = 0.0
-    if classical["total_latency_ms"] > 0:
-        increase_pct_classical = (
-            (hybrid["total_latency_ms"] / classical["total_latency_ms"]) - 1
+    increase_pct_baseline = 0.0
+    if passed["total_latency_ms"] > 0:
+        increase_pct_baseline = (
+            (selected["total_latency_ms"] / passed["total_latency_ms"]) - 1
         ) * 100
 
     baseline_ttfb_ms = (
         float(req.baseline_ttfb_ms)
         if req.baseline_ttfb_ms is not None
-        else float(classical["total_latency_ms"])
+        else float(passed["total_latency_ms"])
     )
     if baseline_ttfb_ms <= 0:
-        baseline_ttfb_ms = float(classical["total_latency_ms"])
+        baseline_ttfb_ms = float(passed["total_latency_ms"])
 
-    absolute_latency_delta_ms = float(hybrid["total_latency_ms"]) - baseline_ttfb_ms
+    absolute_latency_delta_ms = float(selected["total_latency_ms"]) - baseline_ttfb_ms
     latency_degradation_pct = 0.0
     if baseline_ttfb_ms > 0:
         latency_degradation_pct = (absolute_latency_delta_ms / baseline_ttfb_ms) * 100
 
-    total_ttfb_for_risk = float(hybrid["total_latency_ms"])
-    if total_ttfb_for_risk < 100:
-        risk_label = "Safe"
-    elif total_ttfb_for_risk <= 300:
-        risk_label = "Warning"
-    else:
-        risk_label = "Critical"
+    total_ttfb_for_risk = float(selected["total_latency_ms"])
+    risk_state = _latency_state(total_ttfb_for_risk)
+    risk_label = str(PQC_PROFILE_CONFIG[risk_state]["display"])
 
     connection_status = (
         "Connected"
         if (live.get("status") == "success" or req.rtt_ms is not None)
         else "Awaiting Scan"
     )
+
+    def _profile_block(profile_name: str) -> dict[str, float | int]:
+        metrics = simulations[profile_name]
+        return {
+            "tcp_segments_required": metrics["segments"],
+            "extra_tcp_flights": metrics["extra_flights"],
+            "expected_hrr_ms": metrics["expected_hrr_ms"],
+            "expected_packet_loss_penalty_ms": metrics["t_loss_ms"],
+            "total_handshake_ttfb_ms": metrics["total_latency_ms"],
+        }
+
+    pass_metrics = _profile_block("pass")
+    hybrid_metrics = _profile_block("hybrid")
+    fail_metrics = _profile_block("fail")
+    selected_metrics = _profile_block(req.profile)
 
     return {
         "system_config": {
@@ -1036,12 +1115,12 @@ async def pqc_simulate(req: PqcSimRequest) -> dict:
                 "tcp_initial_window": iw,
                 "min_rto_ms": min_rto,
                 "packet_loss_rate": round(loss_rate, 4),
-                "crypto_processing_overhead_ms": 5.0,
-                "target_pqc_hybrid_payload_bytes": hybrid_size,
+                "rto_formula": "RTO = max(min_rto_ms, 3 * measured_rtt_ms)",
             },
             "payload_profiles": {
-                "classical_tls_bytes": classical_size,
-                "pqc_hybrid_bytes": hybrid_size,
+                "pass_bytes": int(PQC_PROFILE_CONFIG["pass"]["payload_bytes"]),
+                "hybrid_bytes": int(PQC_PROFILE_CONFIG["hybrid"]["payload_bytes"]),
+                "fail_bytes": int(PQC_PROFILE_CONFIG["fail"]["payload_bytes"]),
             },
         },
         "live_app_inputs": {
@@ -1054,18 +1133,27 @@ async def pqc_simulate(req: PqcSimRequest) -> dict:
         },
         "calculated_simulation_output": {
             "connection_status": connection_status,
-            "classical_metrics": {
-                "tcp_segments_required": classical["segments"],
-                "extra_tcp_flights": classical["extra_flights"],
-                "expected_packet_loss_penalty_ms": classical["t_loss_ms"],
-                "total_handshake_ttfb_ms": classical["total_latency_ms"],
+            "pass_metrics": pass_metrics,
+            "hybrid_metrics": hybrid_metrics,
+            "fail_metrics": fail_metrics,
+            "selected_profile_metrics": {
+                **selected_metrics,
+                "profile": req.profile,
+                "latency_degradation_percentage": round(latency_degradation_pct, 2),
             },
+            # Compatibility aliases for older frontend blocks.
+            "classical_metrics": pass_metrics,
             "pqc_hybrid_metrics": {
-                "tcp_segments_required": hybrid["segments"],
-                "extra_tcp_flights": hybrid["extra_flights"],
-                "expected_packet_loss_penalty_ms": hybrid["t_loss_ms"],
-                "total_handshake_ttfb_ms": hybrid["total_latency_ms"],
-                "latency_degradation_percentage": round(increase_pct_classical, 2),
+                **hybrid_metrics,
+                "latency_degradation_percentage": round(
+                    (
+                        ((float(simulations["hybrid"]["total_latency_ms"]) / float(passed["total_latency_ms"])) - 1)
+                        * 100
+                    )
+                    if float(passed["total_latency_ms"]) > 0
+                    else 0.0,
+                    2,
+                ),
             },
             "proof_panel": {
                 "baseline_rtt": {
@@ -1075,29 +1163,30 @@ async def pqc_simulate(req: PqcSimRequest) -> dict:
                 },
                 "tcp_segments_required": {
                     "label": "TCP Segments Required",
-                    "value": hybrid["segments"],
-                    "formula": f"ceil(S_TLS/MSS) = ceil({hybrid_size}/{mss})",
+                    "value": selected["segments"],
+                    "formula": f"ceil(S_TLS/MSS) = ceil({selected['payload_size']}/{mss})",
                 },
                 "extra_tcp_flights": {
                     "label": "Extra TCP Flights",
-                    "value": hybrid["extra_flights"],
+                    "value": selected["extra_flights"],
                     "formula": (
-                        f"N_seg({hybrid['segments']}) > iw({iw})"
-                        if hybrid["segments"] > iw
-                        else f"N_seg({hybrid['segments']}) <= iw({iw})"
+                        f"N_seg({selected['segments']}) > iw({iw})"
+                        if selected["segments"] > iw
+                        else f"N_seg({selected['segments']}) <= iw({iw})"
                     ),
                 },
                 "latency_degradation": {
                     "label": "Latency Degradation %",
                     "value_pct": round(latency_degradation_pct, 2),
-                    "formula": "((hybrid_ttfb_ms - baseline_ttfb_ms) / baseline_ttfb_ms) x 100",
+                    "formula": "((selected_ttfb_ms - baseline_ttfb_ms) / baseline_ttfb_ms) x 100",
                 },
             },
             "dependent_variables": {
-                "required_tcp_segments_n_seg": hybrid["segments"],
-                "extra_tcp_flights": hybrid["extra_flights"],
-                "simulated_packet_loss_penalty_t_loss_ms": hybrid["t_loss_ms"],
-                "total_simulated_pqc_ttfb_ms": hybrid["total_latency_ms"],
+                "required_tcp_segments_n_seg": selected["segments"],
+                "extra_tcp_flights": selected["extra_flights"],
+                "simulated_packet_loss_penalty_t_loss_ms": selected["t_loss_ms"],
+                "total_simulated_pqc_ttfb_ms": selected["total_latency_ms"],
+                "expected_hrr_ms": selected["expected_hrr_ms"],
             },
         },
         "headline_metrics": {
@@ -1105,24 +1194,31 @@ async def pqc_simulate(req: PqcSimRequest) -> dict:
             "latency_degradation_percentage": round(latency_degradation_pct, 2),
             "risk_categorization": {
                 "label": risk_label,
+                "state": risk_state,
                 "thresholds_ms": {
-                    "safe_lt": 100,
-                    "warning_range": "100-300",
-                    "critical_gt": 300,
+                    "pass_lt": 140,
+                    "hybrid_range": "140-280",
+                    "fail_gt": 280,
                 },
                 "basis_total_ttfb_ms": round(total_ttfb_for_risk, 2),
             },
         },
         "domain": domain or None,
         "profile": req.profile,
+        "profile_display": str(PQC_PROFILE_CONFIG[req.profile]["display"]),
+        "baseline_profile": "pass",
         "loss_rate": loss_rate,
         "mss": mss,
         "iw": iw,
         "min_rto": min_rto,
         "live_profile": live,
-        "classical": classical,
-        "hybrid": hybrid,
-        "latency_increase_pct": round(increase_pct_classical, 2),
+        "pass": simulations["pass"],
+        "hybrid": simulations["hybrid"],
+        "fail": simulations["fail"],
+        # Compatibility aliases for older clients.
+        "classical": simulations["pass"],
+        "latency_increase_pct": round(increase_pct_baseline, 2),
+        "selected": selected,
     }
 
 
@@ -1134,6 +1230,7 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
         raise HTTPException(status_code=400, detail="No valid domains provided")
 
     loss_rate = max(0.0, min(0.35, float(req.loss_rate)))
+    selected_profile = req.profile
     baseline_override = req.baseline_ttfb_ms
     rows: list[dict[str, object]] = []
     max_domains = max(1, int(os.getenv("PQC_FLEET_EXPORT_MAX_DOMAINS", "24")))
@@ -1160,34 +1257,51 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
                 live = {"status": "failed", "error": str(exc) or "profiling failed"}
 
             profile_error = ""
-            status = "ok"
+            measurement_status = "pass"
             if live.get("status") != "success":
                 rtt = fallback_rtt
-                status = "estimated"
+                measurement_status = "hybrid"
                 profile_error = str(live.get("error") or "profiling failed")
             else:
                 rtt = float(live.get("rtt_ms") or 0)
 
-            classical = _simulate_pqc_latency(rtt, 2500, loss_rate)
-            hybrid = _simulate_pqc_latency(rtt, 16800, loss_rate)
+            simulations = {
+                profile_name: _profile_simulation(
+                    profile_name,
+                    float(rtt),
+                    loss_rate,
+                    min_rto=200.0,
+                    mss=1460,
+                    iw=10,
+                )
+                for profile_name in PQC_PROFILE_ORDER
+            }
+            selected = simulations[selected_profile]
+            latency_status = _latency_state(float(selected["total_latency_ms"]))
             baseline_ttfb = (
                 float(baseline_override)
                 if baseline_override is not None
-                else float(classical["total_latency_ms"])
+                else float(simulations["pass"]["total_latency_ms"])
             )
             degradation_pct = (
-                ((float(hybrid["total_latency_ms"]) - baseline_ttfb) / baseline_ttfb)
+                ((float(selected["total_latency_ms"]) - baseline_ttfb) / baseline_ttfb)
                 * 100
                 if baseline_ttfb > 0
                 else 0.0
             )
             return {
                 "domain": domain,
-                "status": status,
+                "status": latency_status,
+                "measurement_status": measurement_status,
+                "profile": selected_profile,
                 "baseline_rtt_ms": round(rtt, 2),
                 "baseline_ttfb_ms": round(baseline_ttfb, 2),
-                "pqc_ttfb_ms": round(float(hybrid["total_latency_ms"]), 2),
-                "extra_flights": int(hybrid["extra_flights"]),
+                "pass_ttfb_ms": round(float(simulations["pass"]["total_latency_ms"]), 2),
+                "hybrid_ttfb_ms": round(float(simulations["hybrid"]["total_latency_ms"]), 2),
+                "fail_ttfb_ms": round(float(simulations["fail"]["total_latency_ms"]), 2),
+                "selected_ttfb_ms": round(float(selected["total_latency_ms"]), 2),
+                "pqc_ttfb_ms": round(float(selected["total_latency_ms"]), 2),
+                "extra_flights": int(selected["extra_flights"]),
                 "degradation_pct": round(degradation_pct, 2),
                 "packet_loss_pct": round(loss_rate * 100, 2),
                 "error": profile_error,
@@ -1198,9 +1312,15 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
         rows.extend(
             {
                 "domain": domain,
-                "status": "failed",
+                "status": "fail",
+                "measurement_status": "fail",
+                "profile": selected_profile,
                 "baseline_rtt_ms": "",
                 "baseline_ttfb_ms": "",
+                "pass_ttfb_ms": "",
+                "hybrid_ttfb_ms": "",
+                "fail_ttfb_ms": "",
+                "selected_ttfb_ms": "",
                 "pqc_ttfb_ms": "",
                 "extra_flights": "",
                 "degradation_pct": "",
@@ -1216,8 +1336,14 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
         fieldnames=[
             "domain",
             "status",
+            "measurement_status",
+            "profile",
             "baseline_rtt_ms",
             "baseline_ttfb_ms",
+            "pass_ttfb_ms",
+            "hybrid_ttfb_ms",
+            "fail_ttfb_ms",
+            "selected_ttfb_ms",
             "pqc_ttfb_ms",
             "extra_flights",
             "degradation_pct",

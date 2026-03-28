@@ -24,10 +24,10 @@ from .pqc_engine import (
     classify_auth,
     classify_cert_algo,
     classify_key_exchange,
+    decision_tree_label,
     classify_symmetric,
     classify_tls_version,
     hndl_score,
-    label_for_score,
     recommendations_for_status,
 )
 from .tls_inspector import inspect_tls
@@ -142,6 +142,10 @@ async def run_scan_pipeline(scan_id: str, domain: str, scan_model: str = "genera
                 tls.tls_version,
                 host=asset,
                 scan_model=model,
+                key_exchange_group=tls.key_exchange_group,
+                named_group_ids=tls.named_group_ids,
+                cipher_components=tls.cipher_components,
+                supported_cipher_analysis=tls.supported_cipher_analysis,
             )
             auth_status = classify_auth(tls, api, scan_model=model)
             tls_status = classify_tls_version(tls.tls_version)
@@ -150,7 +154,7 @@ async def run_scan_pipeline(scan_id: str, domain: str, scan_model: str = "genera
             score = hndl_score(
                 key_exchange_status,
                 auth_status,
-                tls_status,
+                tls.tls_version,
                 cert_algo_status,
                 symmetric_status,
                 host=asset,
@@ -159,8 +163,9 @@ async def run_scan_pipeline(scan_id: str, domain: str, scan_model: str = "genera
                 cert_sig_algo=tls.cert_sig_algo,
                 cert_not_before=tls.cert_not_before,
                 cert_not_after=tls.cert_not_after,
+                cert_public_key_bits=tls.cert_public_key_bits,
             )
-            label = label_for_score(score, scan_model=model)
+            label = decision_tree_label(tls, key_exchange_status)
             base_recs = recommendations_for_status(score, scan_model=model)
             if has_external_ai and ai_used >= external_ai_budget:
                 recs = base_recs

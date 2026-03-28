@@ -149,15 +149,113 @@ const riskColor = (s) =>
           ? C.cyan
           : C.green;
 const isDarkTheme = () => C.mode === "dark";
+
+const POSTURE_LABELS = {
+  vulnerable: "Quantum-Vulnerable (HNDL Risk)",
+  resilient: "Quantum-Resilient (Hybrid)",
+  safe: "Quantum-Safe (NIST Compliant)",
+};
+
+const MODEL_TO_POSTURE = {
+  pass: POSTURE_LABELS.safe,
+  hybrid: POSTURE_LABELS.resilient,
+  fail: POSTURE_LABELS.vulnerable,
+};
+
+function stateFromPosture(status) {
+  const raw = String(status || "").trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+
+  if (
+    raw === POSTURE_LABELS.safe ||
+    upper === "SAFE" ||
+    upper === "QUANTUM_SAFE" ||
+    upper === "QUANTUM-SAFE" ||
+    upper === "PASS" ||
+    upper === "PASSED"
+  ) {
+    return "pass";
+  }
+
+  if (
+    raw === POSTURE_LABELS.resilient ||
+    upper === "WARNING" ||
+    upper === "ACCEPTABLE" ||
+    upper === "TRANSITIONING" ||
+    upper === "PQC_READY" ||
+    upper === "PQC READY" ||
+    upper === "HYBRID"
+  ) {
+    return "hybrid";
+  }
+
+  if (
+    raw === POSTURE_LABELS.vulnerable ||
+    upper === "CRITICAL" ||
+    upper === "HIGH_RISK" ||
+    upper === "SCAN FAILED/UNKNOWN" ||
+    upper === "CRITICAL VULNERABILITY" ||
+    upper === "FAIL" ||
+    upper === "FAILED" ||
+    upper === "VULNERABLE"
+  ) {
+    return "fail";
+  }
+
+  return null;
+}
+
+function postureForModelState(state) {
+  return MODEL_TO_POSTURE[state] || MODEL_TO_POSTURE.fail;
+}
+
+function normalizePostureLabel(status) {
+  return postureForModelState(stateFromPosture(status));
+}
+
+function modelStateFromRiskScore(score) {
+  const numeric = Number(score);
+  if (!Number.isFinite(numeric)) return "fail";
+  if (numeric <= 60) return "pass";
+  if (numeric <= 80) return "hybrid";
+  return "fail";
+}
+
+function postureLabelFromRiskScore(score) {
+  return postureForModelState(modelStateFromRiskScore(score));
+}
+
 const statusColor = {
-  CRITICAL: C.red,
-  HIGH_RISK: C.orange,
-  TRANSITIONING: C.yellow,
-  PQC_READY: C.cyan,
-  QUANTUM_SAFE: C.green,
-  WARNING: C.yellow,
-  ACCEPTABLE: C.cyan,
-  SAFE: C.green,
+  [POSTURE_LABELS.vulnerable]: C.red,
+  [POSTURE_LABELS.resilient]: C.yellow,
+  [POSTURE_LABELS.safe]: C.green,
+};
+
+const parseNamedGroupIds = (value) =>
+  String(value || "")
+    .split(",")
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean);
+
+const isHybridPqcAsset = (row) => {
+  const family = String(row?.key_exchange_family || "").toLowerCase();
+  if (family.includes("hybrid")) return true;
+
+  const algorithm = String(row?.key_exchange_algorithm || "").toUpperCase();
+  if (algorithm.includes("HYBRID")) return true;
+
+  const group = String(row?.key_exchange_group || "").toUpperCase();
+  const hasPqc = ["MLKEM", "ML-KEM", "KYBER", "X25519MLKEM", "SECP256R1MLKEM"].some((k) =>
+    group.includes(k),
+  );
+  const hasClassic = ["X25519", "X448", "ECDHE", "DHE", "SECP256R1", "P-256"].some((k) =>
+    group.includes(k),
+  );
+  if (hasPqc && hasClassic) return true;
+
+  const namedIds = parseNamedGroupIds(row?.key_exchange_named_group_ids);
+  return namedIds.includes("0X11EC") || namedIds.includes("0X11ED");
 };
 
 const BANK_PRESETS = [
@@ -2336,19 +2434,25 @@ function LiquidSearchSelect({
 }
 
 const Badge = ({ status }) => (
-  <span
-    style={{
-      padding: "4px 10px",
-      borderRadius: 8,
-      border: `1px solid ${statusColor[status] || C.dim}55`,
-      color: statusColor[status] || C.dim,
-      fontSize: 10,
-      fontFamily: "JetBrains Mono",
-      letterSpacing: 1,
-    }}
-  >
-    {status}
-  </span>
+  (() => {
+    const normalized = normalizePostureLabel(status);
+    const tone = statusColor[normalized] || C.dim;
+    return (
+      <span
+        style={{
+          padding: "4px 10px",
+          borderRadius: 8,
+          border: `1px solid ${tone}55`,
+          color: tone,
+          fontSize: 10,
+          fontFamily: "JetBrains Mono",
+          letterSpacing: 1,
+        }}
+      >
+        {normalized}
+      </span>
+    );
+  })()
 );
 
 function TabModeAccent({ scanModel = "general", tabLabel = "" }) {
@@ -2788,7 +2892,7 @@ function ScannerTab({
   const [fleetStatusQuery, setFleetStatusQuery] = useState("");
   const [fleetStatusFilter, setFleetStatusFilter] = useState("all");
   const [boardroomView, setBoardroomView] = useState({
-    ready: null,
+    state: null,
     why: "Run a completed scan to generate board-level PQC readiness insight.",
     actions: [],
   });
@@ -2805,9 +2909,30 @@ function ScannerTab({
   }, [flashMessage]);
 
   const statusScore = (status) =>
-    ({ CRITICAL: 100, WARNING: 50, ACCEPTABLE: 20, SAFE: 0 })[
-      String(status || "").toUpperCase()
-    ] ?? 50;
+    ({
+      [POSTURE_LABELS.vulnerable]: 100,
+      [POSTURE_LABELS.resilient]: 45,
+      [POSTURE_LABELS.safe]: 0,
+    })[normalizePostureLabel(status)] ?? 60;
+
+  const boardroomStateFromScore = (score) => {
+    const risk = Number(score);
+    if (!Number.isFinite(risk)) return "hybrid";
+    if (risk <= 60) return "pass";
+    if (risk <= 80) return "hybrid";
+    return "fail";
+  };
+
+  const scannerPostureCounts = useMemo(() => {
+    const counts = { pass: 0, hybrid: 0, fail: 0 };
+    for (const asset of scanData?.assets || []) {
+      const byLabel = stateFromPosture(asset?.label);
+      const byScore = boardroomStateFromScore(asset?.risk_score);
+      const state = byLabel || byScore || "hybrid";
+      counts[state] += 1;
+    }
+    return counts;
+  }, [scanData?.assets]);
 
   const computeHndlBreakdown = (list) => {
     const cat = {
@@ -2965,7 +3090,7 @@ function ScannerTab({
     setScanId(d.scan_id);
     setFormula(null);
     setBoardroomView({
-      ready: null,
+      state: null,
       why: "Scan started. Boardroom summary will populate when scan completes.",
       actions: [],
     });
@@ -3089,13 +3214,17 @@ function ScannerTab({
 
       if (status && status.eligible) {
         setBoardroomView({
-          ready: true,
+          state: "pass",
           why: `Strict certification checks passed (Avg HNDL: ${status.avg_hndl_risk ?? "n/a"}).`,
           actions,
         });
       } else if (status && !status.eligible) {
+        const fallbackScore = Number.isFinite(Number(status.avg_hndl_risk))
+          ? Number(status.avg_hndl_risk)
+          : Number(nextFormula.total || 0);
+        const inferred = boardroomStateFromScore(fallbackScore);
         setBoardroomView({
-          ready: false,
+          state: inferred === "pass" ? "hybrid" : inferred,
           why: leadReason,
           actions,
         });
@@ -3112,12 +3241,15 @@ function ScannerTab({
             `${reasonText}`,
         });
       } else {
-        const inferredReady = Number(nextFormula.total || 0) <= 35;
+        const inferredState = boardroomStateFromScore(nextFormula.total || 0);
         setBoardroomView({
-          ready: inferredReady,
-          why: inferredReady
-            ? "Observed posture indicates low risk in current scan evidence."
-            : "Observed posture still includes medium/high crypto risk exposure.",
+          state: inferredState,
+          why:
+            inferredState === "pass"
+              ? "Observed posture indicates low risk in current scan evidence."
+              : inferredState === "hybrid"
+                ? "Observed posture is in transition and needs targeted hardening."
+                : "Observed posture still includes high crypto risk exposure.",
           actions,
         });
       }
@@ -3340,21 +3472,38 @@ function ScannerTab({
           <PressureText glow={C.cyan}>DOMAIN RADAR</PressureText>
         </h3>
         {(() => {
-          const boardroomFailed = boardroomView.ready === false;
+          const boardroomState = boardroomView.state;
+          const boardroomPass = boardroomState === "pass";
+          const boardroomHybrid = boardroomState === "hybrid";
+          const boardroomFailed = boardroomState === "fail";
           const panelBg =
             darkTheme
               ? boardroomFailed
                 ? "linear-gradient(145deg, rgba(96,34,38,0.9), rgba(67,24,30,0.84))"
-                : "linear-gradient(145deg, rgba(54,70,56,0.9), rgba(39,52,44,0.84))"
+                : boardroomHybrid
+                  ? "linear-gradient(145deg, rgba(98,76,42,0.9), rgba(74,58,35,0.84))"
+                  : "linear-gradient(145deg, rgba(54,70,56,0.9), rgba(39,52,44,0.84))"
               : boardroomFailed
                 ? "linear-gradient(145deg, rgba(250,225,224,0.9), rgba(239,206,206,0.74))"
+                : boardroomHybrid
+                  ? "linear-gradient(145deg, rgba(255,239,199,0.93), rgba(247,225,170,0.76))"
                 : "linear-gradient(145deg, rgba(255,248,225,0.92), rgba(214,241,226,0.78))";
           const bodyColor = darkTheme ? "#f3eedc" : C.text;
           const titleColor = boardroomFailed
             ? C.red
-            : darkTheme
-              ? "#9be6bd"
-              : C.green;
+            : boardroomHybrid
+              ? C.yellow
+              : darkTheme
+                ? "#9be6bd"
+                : C.green;
+          const readinessText =
+            boardroomState === null
+              ? "PENDING"
+              : boardroomPass
+                ? "YES (PASS)"
+                : boardroomHybrid
+                  ? "PARTIAL (HYBRID)"
+                  : "NO (FAIL)";
 
           return (
         <div
@@ -3382,7 +3531,7 @@ function ScannerTab({
             BOARDROOM VIEW
           </div>
           <div style={{ color: bodyColor }}>
-            Is this bank PQC-ready today: {boardroomView.ready === null ? "PENDING" : boardroomView.ready ? "YES (GREEN)" : "NO (RED)"} | Why: {boardroomView.why} | Top 3 actions: {(boardroomView.actions || []).length ? boardroomView.actions.map((x, i) => `${i + 1}) ${x}`).join(" ; ") : "1) Complete scan 2) Review findings 3) Apply remediation roadmap"}
+            PQC executive state: {(boardroomState || "pending").toUpperCase()} | Readiness today: {readinessText} | Why: {boardroomView.why} | Top 3 actions: {(boardroomView.actions || []).length ? boardroomView.actions.map((x, i) => `${i + 1}) ${x}`).join(" ; ") : "1) Complete scan 2) Review findings 3) Apply remediation roadmap"}
           </div>
         </div>
           );
@@ -3465,6 +3614,23 @@ function ScannerTab({
             minWidth={56}
           />
         </div>
+
+        {!!scanData?.assets?.length && (
+          <div
+            style={{
+              marginTop: 10,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              padding: 10,
+              background: "rgba(132,170,208,0.08)",
+              fontFamily: "JetBrains Mono",
+              fontSize: 11,
+              color: C.dim,
+            }}
+          >
+            Scanner posture snapshot: PASS {scannerPostureCounts.pass} | HYBRID {scannerPostureCounts.hybrid} | FAIL {scannerPostureCounts.fail}
+          </div>
+        )}
 
         {scanData?.scan?.domain && (
           <div
@@ -4537,14 +4703,12 @@ function CBOMTab({ scanModel = "general" }) {
   const [selectedScanId, setSelectedScanId] = useState("");
   const [selectedDomain, setSelectedDomain] = useState("");
   const [downloadingAll, setDownloadingAll] = useState(false);
-  const [fleetLossPct, setFleetLossPct] = useState(1.2);
-  const [exportingFleetCsv, setExportingFleetCsv] = useState(false);
-  const [exportingAllScenarios, setExportingAllScenarios] = useState(false);
-  const [scenarioExportLog, setScenarioExportLog] = useState([]);
+  const [combinedExportProgressPct, setCombinedExportProgressPct] = useState(0);
+  const [combinedExportProgressLabel, setCombinedExportProgressLabel] = useState("");
+  const [combinedExportProgressMode, setCombinedExportProgressMode] = useState("");
   const [scanPickerQuery, setScanPickerQuery] = useState("");
   const [scanPickerIndex, setScanPickerIndex] = useState(-1);
   const [scanPickerOpen, setScanPickerOpen] = useState(false);
-  const [exportFeedback, setExportFeedback] = useState("");
 
   useEffect(() => {
     fetch(`${API}/api/scans?${scanModelParam(scanModel)}`)
@@ -4558,6 +4722,10 @@ function CBOMTab({ scanModel = "general" }) {
     String(value || "cbom")
       .replace(/[^a-z0-9._-]+/gi, "_")
       .toLowerCase();
+
+  const activeModel = normalizeScanModel(scanModel);
+  const scopeLabel = activeModel === "banking" ? "bank" : "domain";
+  const scopeLabelPlural = activeModel === "banking" ? "banks" : "domains";
 
   const downloadJsonFile = (filename, payload) => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -4593,6 +4761,9 @@ function CBOMTab({ scanModel = "general" }) {
       const props = Object.fromEntries(
         (comp?.properties || []).map((p) => [String(p?.name || ""), String(p?.value || "")]),
       );
+      const canonicalLabel = normalizePostureLabel(
+        props["hndl-label"] || props.label || "",
+      );
       return {
         scan_id: scanId,
         domain,
@@ -4609,14 +4780,16 @@ function CBOMTab({ scanModel = "general" }) {
           comp?.cryptoProperties?.protocolProperties?.primaryCipherSuite ||
           "",
         hndl_risk_score: props["hndl-risk-score"] || "",
-        label: props.label || "",
-        hndl_label: props["hndl-label"] || "",
+        label: canonicalLabel,
+        hndl_label: canonicalLabel,
         quantum_safe: props["quantum-safe"] || "",
         nist_fips_203: props["nist-fips-203-signal-detected"] || "",
         nist_fips_204: props["nist-fips-204-signal-detected"] || "",
         nist_fips_205: props["nist-fips-205-signal-detected"] || "",
         crypto_posture_class: props["crypto-posture-class"] || "",
         key_exchange_family: props["key-exchange-family"] || "",
+        key_exchange_group: props["key-exchange-group"] || "",
+        key_exchange_named_group_ids: props["key-exchange-named-group-ids"] || "",
         signature_algorithm: props["signature-algorithm"] || "",
         signature_family: props["signature-family"] || "",
         scan_methodology: props["scan-methodology"] || "",
@@ -4633,18 +4806,6 @@ function CBOMTab({ scanModel = "general" }) {
     const body = rows.map((row) => headers.map((h) => esc(row[h])).join(","));
     return [headers.join(","), ...body].join("\n");
   };
-
-  const completedDomains = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (scans || [])
-            .map((s) => String(s?.domain || "").trim().toLowerCase())
-            .filter(Boolean),
-        ),
-      ),
-    [scans],
-  );
 
   const filteredScans = useMemo(() => {
     const q = String(scanPickerQuery || "").trim().toLowerCase();
@@ -4704,129 +4865,6 @@ function CBOMTab({ scanModel = "general" }) {
     }
   };
 
-  const chunkDomains = (domains, chunkSize = 20) => {
-    const out = [];
-    for (let i = 0; i < domains.length; i += chunkSize) {
-      out.push(domains.slice(i, i + chunkSize));
-    }
-    return out;
-  };
-
-  const parseCsvLines = (csvText) =>
-    String(csvText || "")
-      .split(/\r?\n/)
-      .filter(Boolean);
-
-  const fetchFleetChunkCsv = async (domainsChunk, lossPct) => {
-    const resp = await fetch(`${API}/api/pqc/fleet-export.csv`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        domains: domainsChunk,
-        loss_rate: Number(lossPct) / 100,
-      }),
-    });
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(errText || `HTTP ${resp.status}`);
-    }
-    return parseCsvLines(await resp.text());
-  };
-
-  const exportFleetSimulationCsv = async () => {
-    const domains = completedDomains;
-    if (!domains.length) return;
-
-    setExportingFleetCsv(true);
-    setExportFeedback("");
-    try {
-      const chunks = chunkDomains(domains, 20);
-      let header = "";
-      const rows = [];
-      for (let i = 0; i < chunks.length; i += 1) {
-        const lines = await fetchFleetChunkCsv(chunks[i], fleetLossPct);
-        if (!lines.length) continue;
-        if (!header) header = lines[0];
-        rows.push(...lines.slice(1));
-      }
-      if (!header || !rows.length) {
-        throw new Error("No CSV rows returned by export endpoint.");
-      }
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      downloadTextFile(
-        `fleet-simulation-${fleetLossPct.toFixed(1)}pct-${stamp}.csv`,
-        `${header}\n${rows.join("\n")}`,
-        "text/csv;charset=utf-8",
-      );
-      setExportFeedback("Simulation CSV downloaded successfully.");
-    } catch (err) {
-      setExportFeedback(`Simulation CSV export failed: ${String(err)}`);
-    } finally {
-      setExportingFleetCsv(false);
-    }
-  };
-
-  const exportAllScenarioCsvs = async () => {
-    const domains = completedDomains;
-    if (!domains.length) return;
-
-    const scenarios = [
-      { name: "scenario-a-fiber", lossPct: 0.1 },
-      { name: "scenario-b-4g", lossPct: 1.2 },
-      { name: "scenario-c-rural", lossPct: 3.5 },
-    ];
-
-    setExportingAllScenarios(true);
-    setExportFeedback("");
-    setScenarioExportLog([]);
-    try {
-      const exported = [];
-      const combinedRows = [];
-      let header = "";
-      for (const scenario of scenarios) {
-        const chunks = chunkDomains(domains, 20);
-        for (let i = 0; i < chunks.length; i += 1) {
-          const lines = await fetchFleetChunkCsv(chunks[i], scenario.lossPct);
-          if (!lines.length) continue;
-          if (!header) {
-            header = `scenario,loss_pct,${lines[0]}`;
-          }
-          for (const line of lines.slice(1)) {
-            combinedRows.push(
-              `${scenario.name},${scenario.lossPct.toFixed(1)},${line}`,
-            );
-          }
-        }
-        const now = new Date();
-        const fileName = `fleet-simulation-${scenario.name}-${scenario.lossPct.toFixed(1)}pct.csv`;
-
-        exported.push({
-          scenario: scenario.name,
-          lossPct: scenario.lossPct,
-          fileName,
-          exportedAt: now.toISOString(),
-        });
-      }
-      if (!header || !combinedRows.length) {
-        throw new Error("No scenario rows returned by export endpoint.");
-      }
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const combinedCsv = `${header}\n${combinedRows.join("\n")}`;
-      downloadTextFile(
-        `fleet-simulation-all-scenarios-${stamp}.csv`,
-        combinedCsv,
-        "text/csv;charset=utf-8",
-      );
-      setScenarioExportLog(exported);
-      setExportFeedback("All scenario CSV data exported as one combined file.");
-    } catch (err) {
-      setScenarioExportLog([]);
-      setExportFeedback(`Scenario export failed: ${String(err)}`);
-    } finally {
-      setExportingAllScenarios(false);
-    }
-  };
-
   const load = async (id, domain) => {
     setSelectedScanId(id);
     setSelectedDomain(domain || "");
@@ -4839,7 +4877,7 @@ function CBOMTab({ scanModel = "general" }) {
   const downloadSelectedCbom = () => {
     if (!cbom || !selectedScanId) return;
     const base = safeName(selectedDomain || selectedScanId);
-    downloadJsonFile(`cbom-${base}.json`, cbom);
+    downloadJsonFile(`cbom-${activeModel}-${base}.json`, cbom);
   };
 
   const downloadSelectedCbomCsv = () => {
@@ -4848,17 +4886,21 @@ function CBOMTab({ scanModel = "general" }) {
     const rows = cbomToCsvRows(cbom, selectedScanId, selectedDomain || selectedScanId);
     const csvText = rowsToCsv(rows);
     if (!csvText) return;
-    downloadTextFile(`cbom-${base}.csv`, csvText, "text/csv;charset=utf-8");
+    downloadTextFile(`cbom-${activeModel}-${base}.csv`, csvText, "text/csv;charset=utf-8");
   };
 
   const downloadCombinedCbom = async () => {
     if (!scans.length || downloadingAll) return;
     setDownloadingAll(true);
+    setCombinedExportProgressMode("json");
+    setCombinedExportProgressPct(0);
+    setCombinedExportProgressLabel(`Processed 0/${scans.length} scans`);
     try {
       const items = [];
       const failed = [];
 
-      for (const s of scans) {
+      for (let i = 0; i < scans.length; i += 1) {
+        const s = scans[i];
         try {
           const r = await fetch(`${API}/api/scan/${s.scan_id}/cbom`);
           if (!r.ok) {
@@ -4883,41 +4925,67 @@ function CBOMTab({ scanModel = "general" }) {
             reason: String(err),
           });
         }
+        const done = i + 1;
+        setCombinedExportProgressPct(Math.round((done / scans.length) * 100));
+        setCombinedExportProgressLabel(`Processed ${done}/${scans.length} scans`);
       }
 
       const payload = {
         exported_at_utc: new Date().toISOString(),
-        scan_model: scanModel,
+        scan_model: activeModel,
+        scan_scope: scopeLabel,
         total_scans_considered: scans.length,
         total_cbom_exported: items.length,
         failed_exports: failed,
+        targets: items,
         banks: items,
       };
 
-      downloadJsonFile("cbom-all-scanned-banks.json", payload);
+      downloadJsonFile(`cbom-${activeModel}-all-scanned-${scopeLabelPlural}.json`, payload);
+      setCombinedExportProgressPct(100);
+      setCombinedExportProgressLabel(`Completed ${scans.length}/${scans.length} scans`);
     } finally {
       setDownloadingAll(false);
+      window.setTimeout(() => {
+        setCombinedExportProgressPct(0);
+        setCombinedExportProgressLabel("");
+        setCombinedExportProgressMode("");
+      }, 1400);
     }
   };
 
   const downloadCombinedCbomCsv = async () => {
     if (!scans.length || downloadingAll) return;
     setDownloadingAll(true);
+    setCombinedExportProgressMode("csv");
+    setCombinedExportProgressPct(0);
+    setCombinedExportProgressLabel(`Processed 0/${scans.length} scans`);
     try {
       const rows = [];
-      for (const s of scans) {
+      for (let i = 0; i < scans.length; i += 1) {
+        const s = scans[i];
         try {
           const r = await fetch(`${API}/api/scan/${s.scan_id}/cbom`);
           if (!r.ok) continue;
           const data = await r.json();
           rows.push(...cbomToCsvRows(data, s.scan_id, s.domain));
         } catch (_err) {}
+        const done = i + 1;
+        setCombinedExportProgressPct(Math.round((done / scans.length) * 100));
+        setCombinedExportProgressLabel(`Processed ${done}/${scans.length} scans`);
       }
       const csvText = rowsToCsv(rows);
       if (!csvText) return;
-      downloadTextFile("cbom-all-scanned-banks.csv", csvText, "text/csv;charset=utf-8");
+      downloadTextFile(`cbom-${activeModel}-all-scanned-${scopeLabelPlural}.csv`, csvText, "text/csv;charset=utf-8");
+      setCombinedExportProgressPct(100);
+      setCombinedExportProgressLabel(`Completed ${scans.length}/${scans.length} scans`);
     } finally {
       setDownloadingAll(false);
+      window.setTimeout(() => {
+        setCombinedExportProgressPct(0);
+        setCombinedExportProgressLabel("");
+        setCombinedExportProgressMode("");
+      }, 1400);
     }
   };
 
@@ -4948,6 +5016,7 @@ function CBOMTab({ scanModel = "general" }) {
   const pqcCapableCount = cbomRows.filter(
     (r) => String(r.crypto_posture_class || "").toLowerCase() === "pqc-capable",
   ).length;
+  const hybridPqcCount = cbomRows.filter((r) => isHybridPqcAsset(r)).length;
   const classicalOnlyCount = cbomRows.filter(
     (r) => String(r.crypto_posture_class || "").toLowerCase() === "classical-only",
   ).length;
@@ -4959,35 +5028,32 @@ function CBOMTab({ scanModel = "general" }) {
     ? cbomRows.reduce((sum, row) => sum + Number(row.hndl_risk_score || 0), 0) /
       cbomRows.length
     : 0;
-  const executiveStatus =
-    pqcCapableCount > 0 && avgHndlRisk <= 60 && classicalOnlyCount === 0
-      ? "GREEN"
-      : "RED";
+  const executiveState = !cbomRows.length
+    ? "hybrid"
+    : classicalOnlyCount > 0 || avgHndlRisk > 80
+      ? "fail"
+      : avgHndlRisk <= 60 && pqcCapableCount > 0
+        ? "pass"
+        : "hybrid";
+  const hybridLeadText =
+    cbomRows.length > 0
+      ? hybridPqcCount > 0
+        ? `Hybrid PQC observed on ${hybridPqcCount}/${cbomRows.length} assets.`
+        : "No hybrid PQC handshake signals observed yet."
+      : "Hybrid PQC visibility will appear after a completed scan is selected.";
   const executiveReason =
-    executiveStatus === "GREEN"
+    hybridLeadText +
+    " " +
+    (executiveState === "pass"
       ? "PQC-capable posture observed with low average risk."
-      : classicalOnlyCount > 0
-        ? "Classical-only crypto posture remains present in observed assets."
-        : avgHndlRisk > 60
-          ? "Average HNDL risk is above executive acceptance threshold."
-          : "PQC signals are limited in observable metadata.";
+      : executiveState === "hybrid"
+        ? "Transition posture detected: hardening required before pass-grade certification."
+        : classicalOnlyCount > 0
+          ? "Classical-only crypto posture remains present in observed assets."
+          : "Average HNDL risk is above fail threshold.");
   const darkTheme = isDarkTheme();
-  const transparencyPanelBg =
-    darkTheme
-      ? "linear-gradient(140deg, rgba(63,86,101,0.58), rgba(48,72,94,0.5))"
-      : "linear-gradient(140deg, rgba(255,245,219,0.62), rgba(218,240,228,0.46))";
-  const transparencyTextColor =
-    darkTheme ? "rgba(230,239,246,0.92)" : C.dim;
-  const transparencySubtleColor =
-    darkTheme ? "rgba(210,224,236,0.86)" : C.dim;
-  const transparencyAccentColor =
-    darkTheme ? "#8dd4ff" : C.blue;
-  const simulationPanelBg =
-    darkTheme
-      ? "linear-gradient(135deg, rgba(74,102,118,0.56), rgba(56,86,110,0.52))"
-      : "linear-gradient(135deg, rgba(255,248,222,0.56), rgba(180,231,205,0.33))";
   return (
-    <div style={{ display: "grid", gap: 14 }}>
+    <div className={`cbom-tab ${darkTheme ? "cbom-tab-dark" : "cbom-tab-light"}`}>
       <Card style={{ padding: 16 }}>
         <TabModeAccent scanModel={scanModel} tabLabel="CBOM XPORT HUB" />
         <TabGuide
@@ -4999,22 +5065,8 @@ function CBOMTab({ scanModel = "general" }) {
             "Compliance-friendly evidence",
           ]}
         />
-        <div
-          style={{
-            marginTop: 10,
-            border: `1px solid ${C.border}`,
-            borderRadius: 12,
-            padding: 10,
-            background: transparencyPanelBg,
-            fontFamily: "JetBrains Mono",
-            fontSize: 11,
-            color: transparencyTextColor,
-            lineHeight: 1.5,
-          }}
-        >
-          <div style={{ color: transparencyAccentColor, fontFamily: "Orbitron", fontSize: 11, marginBottom: 6 }}>
-            SCANNING TRANSPARENCY
-          </div>
+        <div className="cbom-transparency-panel">
+          <div className="cbom-transparency-title">SCANNING TRANSPARENCY</div>
           - Scan mode: Active TLS handshake + passive certificate/header metadata observation
           <br />- Agent required on bank systems: No
           <br />- Safety note: No exploit payloads, no auth bypass attempts, no endpoint installation
@@ -5025,7 +5077,7 @@ function CBOMTab({ scanModel = "general" }) {
           onToggle={(e) => setScanPickerOpen(e.currentTarget.open)}
         >
           <summary className="cbom-picker-summary">
-            Select scanned bank/domain ({scans.length})
+            Select scanned {scopeLabel} ({scans.length})
           </summary>
           <div className="cbom-picker-body">
             <input
@@ -5033,7 +5085,7 @@ function CBOMTab({ scanModel = "general" }) {
               value={scanPickerQuery}
               onChange={(e) => setScanPickerQuery(e.target.value)}
               onKeyDown={onScanPickerKeyDown}
-              placeholder="Search bank domain..."
+              placeholder={`Search ${scopeLabel}...`}
               className="cbom-picker-search"
             />
             <div className="cbom-picker-results qh-soft-scroll">
@@ -5043,20 +5095,14 @@ function CBOMTab({ scanModel = "general" }) {
                     key={s.scan_id}
                     onClick={() => load(s.scan_id, s.domain)}
                     onMouseEnter={() => setScanPickerIndex(idx)}
-                    className="cbom-picker-item"
+                    className={`cbom-picker-item ${
+                      selectedScanId === s.scan_id
+                        ? "cbom-picker-item-selected"
+                        : idx === scanPickerIndex
+                          ? "cbom-picker-item-active"
+                          : ""
+                    }`}
                     aria-selected={idx === scanPickerIndex}
-                    style={{
-                      borderColor:
-                        selectedScanId === s.scan_id
-                          ? "rgba(30,128,93,0.65)"
-                          : "rgba(157,141,90,0.35)",
-                      background:
-                        selectedScanId === s.scan_id
-                          ? "linear-gradient(125deg, rgba(237,214,151,0.42), rgba(95,181,142,0.22))"
-                          : idx === scanPickerIndex
-                            ? "linear-gradient(125deg, rgba(255,238,178,0.52), rgba(128,214,176,0.26))"
-                            : "rgba(255,250,232,0.48)",
-                    }}
                   >
                     {s.domain}
                   </button>
@@ -5072,66 +5118,80 @@ function CBOMTab({ scanModel = "general" }) {
         </details>
         {!!cbomComponents.length && (
           <div
-            style={{
-              marginTop: 10,
-              border: `1px solid ${executiveStatus === "RED" ? C.red : C.green}`,
-              borderRadius: 12,
-              padding: 12,
-              background:
-                executiveStatus === "RED"
-                  ? "linear-gradient(145deg, rgba(155,30,40,0.16), rgba(120,20,30,0.1))"
-                  : "linear-gradient(145deg, rgba(36,133,86,0.18), rgba(24,94,62,0.11))",
-              boxShadow:
-                "inset 0 1px 0 rgba(255,255,255,0.45), 0 10px 24px rgba(75,80,70,0.12)",
-              display: "grid",
-              gap: 8,
-            }}
+            className={`cbom-exec-card ${
+              executiveState === "fail"
+                ? "cbom-exec-card-red"
+                : executiveState === "hybrid"
+                  ? "cbom-exec-card-amber"
+                  : "cbom-exec-card-green"
+            }`}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <div style={{ fontFamily: "Orbitron", color: executiveStatus === "RED" ? C.red : C.green, fontSize: 12 }}>
-                EXECUTIVE CRYPTO RISK STATUS: {executiveStatus}
+            <div className="cbom-exec-head">
+              <div className={`cbom-exec-title ${
+                executiveState === "fail"
+                  ? "cbom-exec-title-red"
+                  : executiveState === "hybrid"
+                    ? "cbom-exec-title-amber"
+                    : "cbom-exec-title-green"
+              }`}>
+                EXECUTIVE CRYPTO RISK STATUS: {executiveState.toUpperCase()}
               </div>
-              <div style={{ color: C.text, fontFamily: "JetBrains Mono", fontSize: 11 }}>
-                Avg HNDL Risk: {avgHndlRisk.toFixed(2)}
+              <div className="cbom-exec-side">
+                {hybridPqcCount > 0 ? (
+                  <span
+                    className={`cbom-hybrid-pill ${
+                      darkTheme ? "cbom-hybrid-pill-dark" : "cbom-hybrid-pill-light"
+                    }`}
+                  >
+                    HYBRID PQC OBSERVED
+                  </span>
+                ) : null}
+                <div className="cbom-exec-avg-risk">
+                  Avg HNDL Risk: {avgHndlRisk.toFixed(2)}
+                </div>
               </div>
             </div>
-            <div style={{ color: C.dim, fontFamily: "JetBrains Mono", fontSize: 11 }}>
+            <div className="cbom-exec-reason">
               {executiveReason}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 8 }}>
-              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
-                <div style={{ color: C.dim, fontSize: 10 }}>Assets Observed</div>
-                <div style={{ color: C.text, fontFamily: "Orbitron" }}>{cbomRows.length}</div>
+            <div className="cbom-exec-metrics">
+              <div className="cbom-exec-metric-card">
+                <div className="cbom-exec-metric-label">Assets Observed</div>
+                <div className="cbom-exec-metric-value">{cbomRows.length}</div>
               </div>
-              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
-                <div style={{ color: C.dim, fontSize: 10 }}>PQC-Capable</div>
-                <div style={{ color: C.green, fontFamily: "Orbitron" }}>{pqcCapableCount}</div>
+              <div className="cbom-exec-metric-card">
+                <div className="cbom-exec-metric-label">PQC-Capable</div>
+                <div className="cbom-exec-metric-value cbom-exec-metric-green">{pqcCapableCount}</div>
               </div>
-              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
-                <div style={{ color: C.dim, fontSize: 10 }}>Classical-Only</div>
-                <div style={{ color: C.red, fontFamily: "Orbitron" }}>{classicalOnlyCount}</div>
+              <div className="cbom-exec-metric-card">
+                <div className="cbom-exec-metric-label">Hybrid PQC</div>
+                <div className="cbom-exec-metric-value cbom-exec-metric-blue">{hybridPqcCount}</div>
               </div>
-              <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, background: "rgba(255,255,255,0.22)" }}>
-                <div style={{ color: C.dim, fontSize: 10 }}>Unknown Class</div>
-                <div style={{ color: C.orange, fontFamily: "Orbitron" }}>{unknownClassCount}</div>
+              <div className="cbom-exec-metric-card">
+                <div className="cbom-exec-metric-label">Classical-Only</div>
+                <div className="cbom-exec-metric-value cbom-exec-metric-red">{classicalOnlyCount}</div>
+              </div>
+              <div className="cbom-exec-metric-card">
+                <div className="cbom-exec-metric-label">Unknown Class</div>
+                <div className="cbom-exec-metric-value cbom-exec-metric-orange">{unknownClassCount}</div>
               </div>
             </div>
           </div>
         )}
         <div
-          style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}
+          className="cbom-actions-row"
         >
           <Btn
             onClick={downloadSelectedCbom}
             disabled={!cbom || !selectedScanId}
           >
-            DOWNLOAD SELECTED BANK CBOM JSON
+            {`DOWNLOAD SELECTED ${scopeLabel.toUpperCase()} CBOM JSON`}
           </Btn>
           <Btn
             onClick={downloadSelectedCbomCsv}
             disabled={!cbom || !selectedScanId}
           >
-            DOWNLOAD SELECTED BANK CBOM CSV
+            {`DOWNLOAD SELECTED ${scopeLabel.toUpperCase()} CBOM CSV`}
           </Btn>
           <Btn
             onClick={downloadCombinedCbom}
@@ -5139,7 +5199,7 @@ function CBOMTab({ scanModel = "general" }) {
           >
             {downloadingAll
               ? "PREPARING COMBINED CBOM..."
-              : "DOWNLOAD COMBINED ALL SCANNED BANKS CBOM JSON"}
+              : `DOWNLOAD COMBINED ALL SCANNED ${scopeLabelPlural.toUpperCase()} CBOM JSON`}
           </Btn>
           <Btn
             onClick={downloadCombinedCbomCsv}
@@ -5147,147 +5207,49 @@ function CBOMTab({ scanModel = "general" }) {
           >
             {downloadingAll
               ? "PREPARING COMBINED CBOM CSV..."
-              : "DOWNLOAD COMBINED ALL SCANNED BANKS CBOM CSV"}
-          </Btn>
-          <Btn
-            onClick={exportFleetSimulationCsv}
-            disabled={!completedDomains.length || exportingFleetCsv}
-          >
-            {exportingFleetCsv
-              ? "EXPORTING SIMULATION CSV..."
-              : "EXPORT SIMULATION DATA CSV"}
-          </Btn>
-          <Btn
-            onClick={exportAllScenarioCsvs}
-            disabled={!completedDomains.length || exportingAllScenarios}
-          >
-            {exportingAllScenarios
-              ? "EXPORTING SCENARIOS CSV..."
-              : "EXPORT ALL SCENARIOS CSV"}
+              : `DOWNLOAD COMBINED ALL SCANNED ${scopeLabelPlural.toUpperCase()} CBOM CSV`}
           </Btn>
         </div>
-        <div
-          className="cbom-liquid-glass"
-          style={{
-            marginTop: 10,
-            display: "grid",
-            gap: 8,
-            border: "1px solid rgba(149,135,78,0.38)",
-            borderRadius: 12,
-            padding: 10,
-            background: simulationPanelBg,
-          }}
-        >
-          <div
-            style={{
-              color: transparencySubtleColor,
-              fontFamily: "JetBrains Mono",
-              fontSize: 11,
-            }}
-          >
-            Simulation Packet Loss: {fleetLossPct.toFixed(1)}% (domains source: completed scans in this mode)
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={8}
-            step={0.1}
-            value={fleetLossPct}
-            onChange={(e) => setFleetLossPct(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn onClick={() => setFleetLossPct(0.1)}>Scenario A: 0.1%</Btn>
-            <Btn onClick={() => setFleetLossPct(1.2)}>Scenario B: 1.2%</Btn>
-            <Btn onClick={() => setFleetLossPct(3.5)}>Scenario C: 3.5%</Btn>
-          </div>
-          {scenarioExportLog.length > 0 && (
-            <div
-              style={{
-                border: `1px solid ${C.green}66`,
-                background: "rgba(90,170,120,0.10)",
-                borderRadius: 10,
-                padding: 10,
-                marginTop: 2,
-              }}
-            >
+        {(downloadingAll || combinedExportProgressPct > 0) && (
+          <div className="qh-export-progress">
+            <div className="qh-export-progress-head">
+              <span>
+                {combinedExportProgressMode === "csv"
+                  ? "Combined CBOM CSV Export"
+                  : "Combined CBOM JSON Export"}
+              </span>
+              <span>{combinedExportProgressPct}%</span>
+            </div>
+            <div className="qh-export-progress-track">
               <div
-                style={{
-                  fontFamily: "Orbitron",
-                  color: C.green,
-                  fontSize: 11,
-                  marginBottom: 6,
-                }}
-              >
-                Scenario Export Complete
-              </div>
-              {scenarioExportLog.map((entry) => (
-                <div
-                  key={entry.fileName}
-                  style={{
-                    color: transparencySubtleColor,
-                    fontFamily: "JetBrains Mono",
-                    fontSize: 10,
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {entry.lossPct.toFixed(1)}% - {entry.fileName} - {new Date(entry.exportedAt).toLocaleString()}
-                </div>
-              ))}
+                className="qh-export-progress-fill"
+                style={{ width: `${combinedExportProgressPct}%` }}
+              />
             </div>
-          )}
-          {exportFeedback ? (
-            <div
-              style={{
-                border: "1px solid rgba(30,128,93,0.35)",
-                background:
-                  darkTheme
-                    ? "rgba(46,101,83,0.4)"
-                    : "rgba(242,255,245,0.62)",
-                borderRadius: 10,
-                color: darkTheme ? "#cbffde" : "#1f6a4d",
-                fontFamily: "JetBrains Mono",
-                fontSize: 11,
-                padding: "8px 10px",
-              }}
-            >
-              {exportFeedback}
-            </div>
-          ) : null}
-        </div>
-        <div
-          style={{
-            marginTop: 8,
-            color: transparencySubtleColor,
-            fontFamily: "JetBrains Mono",
-            fontSize: 10,
-          }}
-        >
-          Use the searchable selector above to choose a bank/domain.
+            {combinedExportProgressLabel ? (
+              <div className="qh-export-progress-label">{combinedExportProgressLabel}</div>
+            ) : null}
+          </div>
+        )}
+        <div className="cbom-helper-text">
+          {`Use the searchable selector above to choose a ${scopeLabel}.`}
         </div>
       </Card>
       <Card style={{ padding: 16 }}>
         <div style={{ fontFamily: "Orbitron", color: C.blue, marginBottom: 8 }}>
           <PressureText glow={C.blue}>Asset Crypto Classification</PressureText>
         </div>
-        <div style={{ overflowX: "auto" }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontFamily: "JetBrains Mono",
-              fontSize: 12,
-            }}
-          >
+        <div className="cbom-table-wrap">
+          <table className="cbom-table">
             <thead>
-              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Asset</th>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>TLS</th>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Cipher Suite</th>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Key Exchange</th>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Signature</th>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>PQC/FIPS Signals</th>
-                <th style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}>Status</th>
+              <tr className="cbom-table-row-head">
+                <th className="cbom-table-cell-head">Asset</th>
+                <th className="cbom-table-cell-head">TLS</th>
+                <th className="cbom-table-cell-head">Cipher Suite</th>
+                <th className="cbom-table-cell-head">Key Exchange</th>
+                <th className="cbom-table-cell-head">Signature</th>
+                <th className="cbom-table-cell-head">PQC/FIPS Signals</th>
+                <th className="cbom-table-cell-head">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -5296,24 +5258,42 @@ function CBOMTab({ scanModel = "general" }) {
                   const signalCount = [row.nist_fips_203, row.nist_fips_204, row.nist_fips_205].filter(
                     (v) => String(v).toLowerCase() === "true",
                   ).length;
-                  const statusLabel =
-                    String(row.crypto_posture_class || "").toLowerCase() === "pqc-capable"
-                      ? "SAFE"
-                      : String(row.crypto_posture_class || "").toLowerCase() === "classical-only"
-                        ? "CRITICAL"
-                        : "WARNING";
+                  const explicitState = stateFromPosture(
+                    row.hndl_label || row.label,
+                  );
+                  const postureClass = String(
+                    row.crypto_posture_class || "",
+                  ).toLowerCase();
+                  const numericRisk = Number(row.hndl_risk_score);
+                  const inferredState = Number.isFinite(numericRisk)
+                    ? numericRisk <= 60
+                      ? "pass"
+                      : numericRisk <= 80
+                        ? "hybrid"
+                        : "fail"
+                    : "hybrid";
+                  const statusState =
+                    explicitState ||
+                    (postureClass === "classical-only"
+                      ? "fail"
+                      : postureClass === "pqc-capable"
+                        ? isHybridPqcAsset(row)
+                          ? "hybrid"
+                          : "pass"
+                        : inferredState);
+                  const statusLabel = postureForModelState(statusState);
                   return (
                     <tr
                       key={`${row.asset_name}-${row.primary_cipher_suite}`}
-                      style={{ borderBottom: `1px solid ${C.border}` }}
+                      className="cbom-table-row"
                     >
-                      <td style={{ padding: "8px 6px", color: C.text }}>{row.asset_name || "-"}</td>
-                      <td style={{ padding: "8px 6px", color: C.text }}>{row.tls_version || "unknown"}</td>
-                      <td style={{ padding: "8px 6px", color: C.text }}>{row.primary_cipher_suite || "unknown"}</td>
-                      <td style={{ padding: "8px 6px", color: C.text }}>{row.key_exchange_family || row.key_exchange_algorithm || "unknown"}</td>
-                      <td style={{ padding: "8px 6px", color: C.text }}>{row.signature_family || "unknown"}</td>
-                      <td style={{ padding: "8px 6px", color: C.dim }}>{signalCount}/3</td>
-                      <td style={{ padding: "8px 6px" }}>
+                      <td className="cbom-table-cell-main">{row.asset_name || "-"}</td>
+                      <td className="cbom-table-cell-main">{row.tls_version || "unknown"}</td>
+                      <td className="cbom-table-cell-main">{row.primary_cipher_suite || "unknown"}</td>
+                      <td className="cbom-table-cell-main">{row.key_exchange_family || row.key_exchange_algorithm || "unknown"}</td>
+                      <td className="cbom-table-cell-main">{row.signature_family || "unknown"}</td>
+                      <td className="cbom-table-cell-dim">{signalCount}/3</td>
+                      <td className="cbom-table-cell-main">
                         <Badge status={statusLabel} />
                       </td>
                     </tr>
@@ -5321,7 +5301,7 @@ function CBOMTab({ scanModel = "general" }) {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} style={{ padding: "10px 6px", color: C.dim }}>
+                  <td colSpan={7} className="cbom-table-empty">
                     Select a completed scan to view asset-level crypto classification.
                   </td>
                 </tr>
@@ -5334,75 +5314,33 @@ function CBOMTab({ scanModel = "general" }) {
         <div style={{ fontFamily: "Orbitron", color: C.blue, marginBottom: 8 }}>
           <PressureText glow={C.blue}>NIST PQC Compliance Mapping</PressureText>
         </div>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            fontFamily: "JetBrains Mono",
-            fontSize: 12,
-          }}
-        >
+        <table className="cbom-table cbom-fips-table">
           <thead>
-            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-              <th
-                style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}
-              >
-                Standard
-              </th>
-              <th
-                style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}
-              >
-                Algorithm Family
-              </th>
-              <th
-                style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}
-              >
-                Requirement
-              </th>
-              <th
-                style={{ textAlign: "left", padding: "8px 6px", color: C.dim }}
-              >
-                Observed in CBOM
-              </th>
+            <tr className="cbom-table-row-head">
+              <th className="cbom-table-cell-head">Standard</th>
+              <th className="cbom-table-cell-head">Algorithm Family</th>
+              <th className="cbom-table-cell-head">Requirement</th>
+              <th className="cbom-table-cell-head">Observed in CBOM</th>
             </tr>
           </thead>
           <tbody>
             {fipsRows.map((r) => (
-              <tr
-                key={r.standard}
-                style={{ borderBottom: `1px solid ${C.border}` }}
-              >
-                <td style={{ padding: "8px 6px", color: C.text }}>
-                  {r.standard}
-                </td>
-                <td style={{ padding: "8px 6px", color: C.text }}>
-                  {r.algorithm}
-                </td>
-                <td style={{ padding: "8px 6px", color: C.dim }}>
-                  {r.requirement}
-                </td>
-                <td style={{ padding: "8px 6px" }}>
-                  <Badge status={r.matched ? "SAFE" : "WARNING"} />
-                </td>
+              <tr key={r.standard} className="cbom-table-row">
+                <td className="cbom-table-cell-main">{r.standard}</td>
+                <td className="cbom-table-cell-main">{r.algorithm}</td>
+                <td className="cbom-table-cell-dim">{r.requirement}</td>
+                <td className="cbom-table-cell-main"><Badge status={r.matched ? POSTURE_LABELS.safe : POSTURE_LABELS.vulnerable} /></td>
               </tr>
             ))}
           </tbody>
         </table>
       </Card>
       <Card style={{ padding: 16 }}>
-        <details>
-          <summary style={{ cursor: "pointer", color: C.dim, fontFamily: "JetBrains Mono", marginBottom: 8 }}>
+        <details className="cbom-raw-details">
+          <summary className="cbom-raw-summary">
             View Raw CBOM JSON (technical)
           </summary>
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: "pre-wrap",
-              color: C.text,
-              fontFamily: "JetBrains Mono",
-              fontSize: 12,
-            }}
-          >
+          <pre className="cbom-raw-pre">
             {cbom
               ? JSON.stringify(cbom, null, 2)
               : "Select a completed scan to view CBOM."}
@@ -5748,6 +5686,8 @@ function LeaderboardTab({ scanModel = "general" }) {
   const mostSecure =
     [...filteredNormalized].sort((a, b) => a.avg_score - b.avg_score)[0] ||
     null;
+  const highestRiskState = modelStateFromRiskScore(highestRisk?.avg_score);
+  const mostSecureState = modelStateFromRiskScore(mostSecure?.avg_score);
   const fallbackAssetRows = filteredNormalized.map((r) => ({
     scan_id: r.scan_id,
     domain: r.domain,
@@ -5884,10 +5824,13 @@ function LeaderboardTab({ scanModel = "general" }) {
               fontSize: 10,
             }}
           >
-            Significance: A score = 61 indicates critical vulnerabilities. Such
-            scores mean the domain's encryption policies (like TLS ciphers) are
-            at high risk of quantum or classical breaches and require immediate
-            remediation.
+            Significance: 3-state posture baseline is PASS (${"<="}60), HYBRID
+            (61-80), FAIL ({">"}80). Current status: {" "}
+            {highestRisk ? highestRiskState.toUpperCase() : "PENDING"} ({" "}
+            {highestRisk
+              ? postureLabelFromRiskScore(highestRisk.avg_score)
+              : "No posture yet"}
+            ).
           </div>
           <div
             style={{
@@ -5935,9 +5878,12 @@ function LeaderboardTab({ scanModel = "general" }) {
               fontSize: 10,
             }}
           >
-            Significance: A score = 35 implies strong cryptographic hygiene,
-            meaning the domain relies on robust, modern, and potentially
-            PQC-ready encryption protocols.
+            Significance: The lowest-risk domain should trend toward PASS
+            posture. Current status: {mostSecure ? mostSecureState.toUpperCase() : "PENDING"} ({" "}
+            {mostSecure
+              ? postureLabelFromRiskScore(mostSecure.avg_score)
+              : "No posture yet"}
+            ).
           </div>
           <div
             style={{
@@ -6218,11 +6164,7 @@ function LeaderboardTab({ scanModel = "general" }) {
                       letterSpacing: 0.5,
                     }}
                   >
-                    {r.avg_risk < 36
-                      ? "Safe Posture"
-                      : r.avg_risk < 61
-                        ? "Warning State"
-                        : "Critical Risk"}
+                    {modelStateFromRiskScore(r.avg_risk).toUpperCase()}
                   </div>
                 </div>
               </div>
@@ -6449,11 +6391,7 @@ function LeaderboardTab({ scanModel = "general" }) {
                             letterSpacing: 0.5,
                           }}
                         >
-                          {r.avg_risk < 36
-                            ? "Safe Posture"
-                            : r.avg_risk < 61
-                              ? "Warning State"
-                              : "Critical Risk"}
+                          {modelStateFromRiskScore(r.avg_risk).toUpperCase()}
                         </div>
                       </td>
                     </tr>
@@ -6737,13 +6675,8 @@ function BankSignalLabTab({ scanModel = "general" }) {
         "Track weekly risk movement and verify mitigation closure.",
       ]
     : [];
-  const scoreBand = (score) => {
-    const s = Number(score || 0);
-    if (s >= 80) return "very safe";
-    if (s >= 65) return "safe";
-    if (s >= 45) return "watch";
-    return "high risk";
-  };
+  const scoreBand = (score) =>
+    modelStateFromRiskScore(100 - Number(score || 0)).toUpperCase();
   const compact = typeof window !== "undefined" && window.innerWidth < 860;
   const podiumOrder = compact
     ? [podium.first, podium.second, podium.third]
@@ -8187,8 +8120,6 @@ const TAB_VISUALS = {
   },
 };
 
-const getTabLabel = (id) => TABS.find(([tid]) => tid === id)?.[1] || id;
-
 class TabContentErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -8230,7 +8161,8 @@ class TabContentErrorBoundary extends React.Component {
 }
 
 function PQCLatencyTab({ scanModel = "general" }) {
-  const [profile, setProfile] = useState("classical");
+  const [scans, setScans] = useState([]);
+  const [profile, setProfile] = useState("hybrid");
   const [rttMs, setRttMs] = useState(72);
   const [lossPct, setLossPct] = useState(1.2);
   const [animateTick, setAnimateTick] = useState(0);
@@ -8245,17 +8177,42 @@ function PQCLatencyTab({ scanModel = "general" }) {
   const [remoteError, setRemoteError] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [networkStatus, setNetworkStatus] = useState(null);
+  const [exportingFleetCsv, setExportingFleetCsv] = useState(false);
+  const [exportingAllScenarios, setExportingAllScenarios] = useState(false);
+  const [scenarioExportLog, setScenarioExportLog] = useState([]);
+  const [exportFeedback, setExportFeedback] = useState("");
+  const [fleetExportProgressPct, setFleetExportProgressPct] = useState(0);
+  const [fleetExportProgressLabel, setFleetExportProgressLabel] = useState("");
 
   const MSS = 1460;
   const IW = 10;
   const MIN_RTO = 200;
-  const BASE_TLS = 500;
-  const CLASSICAL_TLS_BYTES = BASE_TLS;
-  const HYBRID_KEM_CT = 1100;
-  const HYBRID_SERVER_CERT = 5000;
-  const HYBRID_INTERMEDIATE_CERT = 5000;
-  const HYBRID_EXTRA_OVERHEAD = 5200;
-  const T_CRYPTO_MS = profile === "hybrid" ? 18 : 9;
+  const activeModel = normalizeScanModel(scanModel);
+  const PROFILE_CONFIG = {
+    pass: {
+      label: "PASS",
+      payloadBytes: 9600,
+      cryptoMs: 7,
+      hrrRttFactor: 0,
+      lossMultiplier: 0.9,
+    },
+    hybrid: {
+      label: "HYBRID",
+      payloadBytes: 16800,
+      cryptoMs: 10,
+      hrrRttFactor: 0.25,
+      lossMultiplier: 1.0,
+    },
+    fail: {
+      label: "FAIL",
+      payloadBytes: 24200,
+      cryptoMs: 15,
+      hrrRttFactor: 1.0,
+      lossMultiplier: 1.35,
+    },
+  };
+  const activeProfileConfig = PROFILE_CONFIG[profile] || PROFILE_CONFIG.hybrid;
+  const T_CRYPTO_MS = activeProfileConfig.cryptoMs;
   const p = Math.max(0, Math.min(0.35, lossPct / 100));
 
   const cleanedDomain = String(bankDomain || "")
@@ -8272,23 +8229,21 @@ function PQCLatencyTab({ scanModel = "general" }) {
     [cleanedDomain],
   );
 
-  const hybridChainPayload =
-    BASE_TLS +
-    HYBRID_KEM_CT +
-    HYBRID_SERVER_CERT +
-    HYBRID_INTERMEDIATE_CERT +
-    HYBRID_EXTRA_OVERHEAD;
-  const localPayloadBytes =
-    profile === "hybrid" ? hybridChainPayload : CLASSICAL_TLS_BYTES;
+  const localPayloadBytes = activeProfileConfig.payloadBytes;
   const localNSeg = Math.max(1, Math.ceil(localPayloadBytes / MSS));
   const localFlights =
     localNSeg <= IW ? 0 : Math.ceil(Math.log2(localNSeg / IW + 1));
   const localTProp = rttMs * (2 + localFlights);
-  const localPSuccess = Math.pow(1 - p, localNSeg);
+  const localHrr = rttMs * activeProfileConfig.hrrRttFactor;
+  const localEffectiveLoss = Math.max(
+    0,
+    Math.min(0.6, p * activeProfileConfig.lossMultiplier),
+  );
+  const localPSuccess = Math.pow(1 - localEffectiveLoss, localNSeg);
   const localRTO = Math.max(MIN_RTO, 3 * rttMs);
   const localTLoss =
     localPSuccess > 0 ? ((1 - localPSuccess) / localPSuccess) * localRTO : 0;
-  const localTtfb = T_CRYPTO_MS + localTProp + localTLoss;
+  const localTtfb = T_CRYPTO_MS + localTProp + localHrr + localTLoss;
 
   useEffect(() => {
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -8309,6 +8264,200 @@ function PQCLatencyTab({ scanModel = "general" }) {
       .then((d) => setNetworkStatus(d))
       .catch(() => setNetworkStatus(null));
   }, []);
+
+  useEffect(() => {
+    fetch(`${API}/api/scans?${scanModelParam(scanModel)}`)
+      .then((r) => r.json())
+      .then((d) =>
+        setScans(uniqueCompletedScansByDomain(filterRowsByMode(d, scanModel))),
+      )
+      .catch(() => setScans([]));
+  }, [scanModel]);
+
+  const completedDomains = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (scans || [])
+            .map((s) => String(s?.domain || "").trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ),
+    [scans],
+  );
+
+  const downloadTextFile = (filename, text, mime = "text/plain;charset=utf-8") => {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const chunkDomains = (domains, chunkSize = 20) => {
+    const out = [];
+    for (let i = 0; i < domains.length; i += chunkSize) {
+      out.push(domains.slice(i, i + chunkSize));
+    }
+    return out;
+  };
+
+  const parseCsvLines = (csvText) =>
+    String(csvText || "")
+      .split(/\r?\n/)
+      .filter(Boolean);
+
+  const fetchFleetChunkCsv = async (
+    domainsChunk,
+    nextLossPct,
+    nextProfile = "hybrid",
+  ) => {
+    const resp = await fetch(`${API}/api/pqc/fleet-export.csv`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        domains: domainsChunk,
+        loss_rate: Number(nextLossPct) / 100,
+        profile: nextProfile,
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(errText || `HTTP ${resp.status}`);
+    }
+    return parseCsvLines(await resp.text());
+  };
+
+  const exportFleetSimulationCsv = async () => {
+    const domains = completedDomains;
+    if (!domains.length || exportingFleetCsv || exportingAllScenarios) return;
+
+    setExportingFleetCsv(true);
+    setExportFeedback("");
+    setFleetExportProgressPct(0);
+    try {
+      const chunks = chunkDomains(domains, 20);
+      setFleetExportProgressLabel(`Processed 0/${chunks.length} chunks`);
+      let header = "";
+      const rows = [];
+      for (let i = 0; i < chunks.length; i += 1) {
+        const lines = await fetchFleetChunkCsv(chunks[i], lossPct, profile);
+        if (!lines.length) continue;
+        if (!header) header = lines[0];
+        rows.push(...lines.slice(1));
+        const done = i + 1;
+        setFleetExportProgressPct(Math.round((done / chunks.length) * 100));
+        setFleetExportProgressLabel(`Processed ${done}/${chunks.length} chunks`);
+      }
+      if (!header || !rows.length) {
+        throw new Error("No CSV rows returned by export endpoint.");
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      downloadTextFile(
+        `fleet-simulation-${activeModel}-${profile}-${lossPct.toFixed(1)}pct-${stamp}.csv`,
+        `${header}\n${rows.join("\n")}`,
+        "text/csv;charset=utf-8",
+      );
+      setFleetExportProgressPct(100);
+      setFleetExportProgressLabel(`Completed ${chunks.length}/${chunks.length} chunks`);
+      setExportFeedback(`Simulation CSV (${activeModel.toUpperCase()}) downloaded successfully.`);
+    } catch (err) {
+      setExportFeedback(`Simulation CSV export failed: ${String(err)}`);
+    } finally {
+      setExportingFleetCsv(false);
+      window.setTimeout(() => {
+        setFleetExportProgressPct(0);
+        setFleetExportProgressLabel("");
+      }, 1400);
+    }
+  };
+
+  const exportAllScenarioCsvs = async () => {
+    const domains = completedDomains;
+    if (!domains.length || exportingFleetCsv || exportingAllScenarios) return;
+
+    const scenarios = [
+      { name: "model-pass", profile: "pass", lossPct: 0.1 },
+      { name: "model-hybrid", profile: "hybrid", lossPct: 1.2 },
+      { name: "model-fail", profile: "fail", lossPct: 3.5 },
+    ];
+
+    setExportingAllScenarios(true);
+    setExportFeedback("");
+    setScenarioExportLog([]);
+    setFleetExportProgressPct(0);
+    try {
+      const exported = [];
+      const combinedRows = [];
+      let header = "";
+      const chunks = chunkDomains(domains, 20);
+      const totalSteps = scenarios.length * chunks.length;
+      let stepsDone = 0;
+      setFleetExportProgressLabel(`Processed 0/${totalSteps} chunks`);
+      for (const scenario of scenarios) {
+        for (let i = 0; i < chunks.length; i += 1) {
+          const lines = await fetchFleetChunkCsv(
+            chunks[i],
+            scenario.lossPct,
+            scenario.profile,
+          );
+          if (!lines.length) continue;
+          if (!header) {
+            header = `scenario,profile,loss_pct,${lines[0]}`;
+          }
+          for (const line of lines.slice(1)) {
+            combinedRows.push(
+              `${scenario.name},${scenario.profile},${scenario.lossPct.toFixed(
+                1,
+              )},${line}`,
+            );
+          }
+          stepsDone += 1;
+          setFleetExportProgressPct(Math.round((stepsDone / totalSteps) * 100));
+          setFleetExportProgressLabel(
+            `Processed ${stepsDone}/${totalSteps} chunks (${scenario.profile.toUpperCase()})`,
+          );
+        }
+        const now = new Date();
+        const fileName = `fleet-simulation-${activeModel}-${scenario.name}-${scenario.profile}-${scenario.lossPct.toFixed(1)}pct.csv`;
+
+        exported.push({
+          scenario: scenario.name,
+          profile: scenario.profile,
+          lossPct: scenario.lossPct,
+          fileName,
+          exportedAt: now.toISOString(),
+        });
+      }
+      if (!header || !combinedRows.length) {
+        throw new Error("No scenario rows returned by export endpoint.");
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const combinedCsv = `${header}\n${combinedRows.join("\n")}`;
+      downloadTextFile(
+        `fleet-simulation-${activeModel}-all-scenarios-${stamp}.csv`,
+        combinedCsv,
+        "text/csv;charset=utf-8",
+      );
+      setFleetExportProgressPct(100);
+      setFleetExportProgressLabel(`Completed ${totalSteps}/${totalSteps} chunks`);
+      setScenarioExportLog(exported);
+      setExportFeedback(`All 3-model scenario CSV data exported as one combined ${activeModel.toUpperCase()} file.`);
+    } catch (err) {
+      setScenarioExportLog([]);
+      setExportFeedback(`Scenario export failed: ${String(err)}`);
+    } finally {
+      setExportingAllScenarios(false);
+      window.setTimeout(() => {
+        setFleetExportProgressPct(0);
+        setFleetExportProgressLabel("");
+      }, 1400);
+    }
+  };
 
   const runLiveScan = async (nextProfile = profile) => {
     if (!cleanedDomain) {
@@ -8348,13 +8497,11 @@ function PQCLatencyTab({ scanModel = "general" }) {
   };
 
   const remoteActive = remoteMetrics
-    ? profile === "hybrid"
-      ? remoteMetrics.hybrid
-      : remoteMetrics.classical
+    ? remoteMetrics?.[profile] || remoteMetrics?.selected || null
     : null;
   const hasRemote = Boolean(remoteMetrics?.calculated_simulation_output);
   const awaitState = !hasRemote && !isScanning;
-  const payloadBytes = hasRemote ? (profile === "hybrid" ? 16800 : 2500) : 0;
+  const payloadBytes = hasRemote ? Number(remoteActive?.payload_size || 0) : 0;
   const nSeg = hasRemote ? (remoteActive?.segments ?? 0) : 0;
   const flights = hasRemote ? (remoteActive?.extra_flights ?? 0) : 0;
   const pSuccess = hasRemote ? (remoteActive?.p_success ?? 0) : 0;
@@ -8365,15 +8512,32 @@ function PQCLatencyTab({ scanModel = "general" }) {
     ? remoteMetrics.calculated_simulation_output
     : {
         connection_status: awaitState ? "Awaiting Scan" : "Scanning",
-        classical_metrics: {
+        pass_metrics: {
           tcp_segments_required: 0,
           extra_tcp_flights: 0,
+          expected_hrr_ms: 0.0,
           expected_packet_loss_penalty_ms: 0.0,
           total_handshake_ttfb_ms: 0.0,
         },
-        pqc_hybrid_metrics: {
+        hybrid_metrics: {
           tcp_segments_required: 0,
           extra_tcp_flights: 0,
+          expected_hrr_ms: 0.0,
+          expected_packet_loss_penalty_ms: 0.0,
+          total_handshake_ttfb_ms: 0.0,
+        },
+        fail_metrics: {
+          tcp_segments_required: 0,
+          extra_tcp_flights: 0,
+          expected_hrr_ms: 0.0,
+          expected_packet_loss_penalty_ms: 0.0,
+          total_handshake_ttfb_ms: 0.0,
+        },
+        selected_profile_metrics: {
+          profile,
+          tcp_segments_required: 0,
+          extra_tcp_flights: 0,
+          expected_hrr_ms: 0.0,
           expected_packet_loss_penalty_ms: 0.0,
           total_handshake_ttfb_ms: 0.0,
           latency_degradation_percentage: 0.0,
@@ -8399,11 +8563,11 @@ function PQCLatencyTab({ scanModel = "general" }) {
     absolute_latency_delta_ms: 0,
     latency_degradation_percentage: 0,
     risk_categorization: {
-      label: "Safe",
+      label: "PASS",
       thresholds_ms: {
-        safe_lt: 100,
-        warning_range: "100-300",
-        critical_gt: 300,
+        pass_lt: 140,
+        hybrid_range: "140-280",
+        fail_gt: 280,
       },
       basis_total_ttfb_ms: 0,
     },
@@ -8414,25 +8578,29 @@ function PQCLatencyTab({ scanModel = "general" }) {
   );
   const baselineTtfbDisplay = Number(
     remoteMetrics?.live_app_inputs?.baseline_ttfb_ms ??
-      outputBlock.classical_metrics.total_handshake_ttfb_ms ??
+      outputBlock.pass_metrics?.total_handshake_ttfb_ms ??
       localTtfb,
   );
-  const hybridPayloadForMath = 16800;
+  const selectedPayloadForMath = Number(
+    remoteActive?.payload_size || activeProfileConfig.payloadBytes,
+  );
   const hybridSegmentsDisplay = Number(
-    outputBlock.pqc_hybrid_metrics.tcp_segments_required ??
-      Math.ceil(hybridPayloadForMath / MSS),
+    outputBlock.selected_profile_metrics?.tcp_segments_required ??
+      Math.ceil(selectedPayloadForMath / MSS),
   );
   const extraFlightsDisplay = Number(
-    outputBlock.pqc_hybrid_metrics.extra_tcp_flights ??
+    outputBlock.selected_profile_metrics?.extra_tcp_flights ??
       (hybridSegmentsDisplay <= IW
         ? 0
         : Math.ceil(Math.log2(hybridSegmentsDisplay / IW + 1))),
   );
   const hybridTtfbDisplay = Number(
-    outputBlock.pqc_hybrid_metrics.total_handshake_ttfb_ms ?? ttfb ?? localTtfb,
+    outputBlock.selected_profile_metrics?.total_handshake_ttfb_ms ??
+      ttfb ??
+      localTtfb,
   );
   const latencyDegradationDisplay = Number(
-    outputBlock.pqc_hybrid_metrics.latency_degradation_percentage ??
+    outputBlock.selected_profile_metrics?.latency_degradation_percentage ??
       headline.latency_degradation_percentage ??
       (baselineTtfbDisplay > 0
         ? ((hybridTtfbDisplay - baselineTtfbDisplay) / baselineTtfbDisplay) * 100
@@ -8705,7 +8873,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
               step="0.1"
               value={baselineTtfbMs}
               onChange={(e) => setBaselineTtfbMs(e.target.value)}
-              placeholder="Auto from classical profile"
+              placeholder="Auto from PASS profile"
               style={{
                 width: "100%",
                 boxSizing: "border-box",
@@ -8731,21 +8899,21 @@ function PQCLatencyTab({ scanModel = "general" }) {
         >
           <button
             className="qh-latency-btn liquid-tap"
-            onClick={() => launchSimulation("classical")}
+            onClick={() => launchSimulation("pass")}
             style={{
-              borderColor: profile === "classical" ? C.green : C.border,
-              color: profile === "classical" ? C.green : C.dim,
+              borderColor: profile === "pass" ? C.green : C.border,
+              color: profile === "pass" ? C.green : C.dim,
               background:
-                profile === "classical"
+                profile === "pass"
                   ? "rgba(111,194,148,0.14)"
                   : "rgba(185,152,112,0.06)",
               boxShadow:
-                profile === "classical"
+                profile === "pass"
                   ? "inset 0 1px 0 rgba(255,255,255,0.62), 0 10px 20px rgba(52,79,64,0.2)"
                   : "inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 14px rgba(41,58,54,0.14)",
             }}
           >
-            * CLASSICAL PROFILE
+            * PASS MODEL
           </button>
           <button
             className="qh-latency-btn liquid-tap"
@@ -8763,7 +8931,25 @@ function PQCLatencyTab({ scanModel = "general" }) {
                   : "inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 14px rgba(56,49,34,0.14)",
             }}
           >
-            * HYBRID PQC PROFILE
+            * HYBRID MODEL
+          </button>
+          <button
+            className="qh-latency-btn liquid-tap"
+            onClick={() => launchSimulation("fail")}
+            style={{
+              borderColor: profile === "fail" ? C.red : C.border,
+              color: profile === "fail" ? C.red : C.dim,
+              background:
+                profile === "fail"
+                  ? "rgba(220,53,69,0.14)"
+                  : "rgba(185,152,112,0.06)",
+              boxShadow:
+                profile === "fail"
+                  ? "inset 0 1px 0 rgba(255,255,255,0.58), 0 10px 20px rgba(121,45,58,0.18)"
+                  : "inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 14px rgba(56,49,34,0.14)",
+            }}
+          >
+            * FAIL MODEL
           </button>
           <button
             className="qh-latency-btn liquid-tap"
@@ -8799,6 +8985,66 @@ function PQCLatencyTab({ scanModel = "general" }) {
             />
             SHOW ANNOTATIONS
           </label>
+        </div>
+
+        <div className="cbom-liquid-glass cbom-sim-panel">
+          <div className="cbom-sim-header">
+            Simulation Packet Loss: {lossPct.toFixed(1)}% (domains source: {completedDomains.length} completed scans in {activeModel.toUpperCase()} mode)
+            <br />3-model wire: PASS 0.1% | HYBRID 1.2% | FAIL 3.5%
+          </div>
+          <div className="cbom-sim-scenarios">
+            <Btn onClick={() => setLossPct(0.1)}>PASS: 0.1%</Btn>
+            <Btn onClick={() => setLossPct(1.2)}>HYBRID: 1.2%</Btn>
+            <Btn onClick={() => setLossPct(3.5)}>FAIL: 3.5%</Btn>
+            <Btn
+              onClick={exportFleetSimulationCsv}
+              disabled={!completedDomains.length || exportingFleetCsv || exportingAllScenarios}
+            >
+              {exportingFleetCsv
+                ? "EXPORTING SIMULATION CSV..."
+                : "EXPORT SIMULATION DATA CSV"}
+            </Btn>
+            <Btn
+              onClick={exportAllScenarioCsvs}
+              disabled={!completedDomains.length || exportingFleetCsv || exportingAllScenarios}
+            >
+              {exportingAllScenarios
+                ? "EXPORTING SCENARIOS CSV..."
+                : "EXPORT ALL SCENARIOS CSV"}
+            </Btn>
+          </div>
+          {(exportingFleetCsv || exportingAllScenarios || fleetExportProgressPct > 0) && (
+            <div className="qh-export-progress">
+              <div className="qh-export-progress-head">
+                <span>
+                  {exportingAllScenarios
+                    ? "PQC All-Scenario Export"
+                    : "PQC Simulation Export"}
+                </span>
+                <span>{fleetExportProgressPct}%</span>
+              </div>
+              <div className="qh-export-progress-track">
+                <div
+                  className="qh-export-progress-fill"
+                  style={{ width: `${fleetExportProgressPct}%` }}
+                />
+              </div>
+              {fleetExportProgressLabel ? (
+                <div className="qh-export-progress-label">{fleetExportProgressLabel}</div>
+              ) : null}
+            </div>
+          )}
+          {scenarioExportLog.length > 0 && (
+            <div className="cbom-sim-log">
+              <div className="cbom-sim-log-title">Scenario Export Complete</div>
+              {scenarioExportLog.map((entry) => (
+                <div key={entry.fileName} className="cbom-sim-log-entry">
+                  {entry.profile.toUpperCase()} ({entry.lossPct.toFixed(1)}%) - {entry.fileName} - {new Date(entry.exportedAt).toLocaleString()}
+                </div>
+              ))}
+            </div>
+          )}
+          {exportFeedback ? <div className="cbom-export-feedback">{exportFeedback}</div> : null}
         </div>
 
         <div
@@ -8903,9 +9149,21 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 fontSize: 12,
               }}
             >
-              {profile.toUpperCase()}
+              {activeProfileConfig.label}
             </div>
           </div>
+        </div>
+
+        <div
+          style={{
+            color: C.dim,
+            fontFamily: "JetBrains Mono",
+            fontSize: 10,
+            letterSpacing: 0.3,
+          }}
+        >
+          3-model wire: PASS (low payload, no HRR) | HYBRID (mixed posture) |
+          FAIL (max payload, full HRR/loss penalties)
         </div>
 
         <div
@@ -9041,9 +9299,10 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 color: latencyTextColor,
               }}
             >
-              hybrid_latency_degradation:{" "}
+              selected_latency_degradation:{" "}
               {Number(
-                outputBlock.pqc_hybrid_metrics.latency_degradation_percentage ||
+                outputBlock.selected_profile_metrics
+                  ?.latency_degradation_percentage ||
                   0,
               ).toFixed(2)}
               %
@@ -9144,7 +9403,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
               }}
             >
               risk_categorization:{" "}
-              {headline.risk_categorization?.label || "Safe"}
+              {headline.risk_categorization?.label || "PASS"}
             </div>
             <div
               style={{
@@ -9155,8 +9414,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 color: latencyTextColor,
               }}
             >
-              thresholds(ms): Safe &lt; 100 | Warning 100-300 | Critical &gt;
-              300
+              thresholds(ms): Pass &lt; 140 | Hybrid 140-280 | Fail &gt; 280
             </div>
           </div>
         </div>
@@ -9194,7 +9452,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
             <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: latencyChipBg }}>
               <div style={{ color: latencySubtleColor, marginBottom: 4 }}>TCP Segments Required</div>
               <div style={{ color: latencyTextColor }}>
-                ceil(S_TLS/MSS) = ceil({hybridPayloadForMath}/{MSS}) = {hybridSegmentsDisplay}
+                ceil(S_TLS/MSS) = ceil({selectedPayloadForMath}/{MSS}) = {hybridSegmentsDisplay}
               </div>
             </div>
             <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 10px", background: latencyChipBg }}>
@@ -9257,9 +9515,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
               }}
             >
               {hasRemote
-                ? profile === "hybrid"
-                  ? "PQC chain modeled"
-                  : "Base TLS modeled"
+                ? `${activeProfileConfig.label} profile modeled`
                 : "Run scan to populate"}
             </div>
           </div>
@@ -9374,7 +9630,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 marginBottom: 6,
               }}
             >
-              CLASSICAL METRICS
+              PASS METRICS
             </div>
             <div
               style={{
@@ -9386,22 +9642,26 @@ function PQCLatencyTab({ scanModel = "general" }) {
             >
               <div>
                 tcp_segments_required:{" "}
-                {outputBlock.classical_metrics.tcp_segments_required}
+                {outputBlock.pass_metrics?.tcp_segments_required ?? 0}
               </div>
               <div>
                 extra_tcp_flights:{" "}
-                {outputBlock.classical_metrics.extra_tcp_flights}
+                {outputBlock.pass_metrics?.extra_tcp_flights ?? 0}
+              </div>
+              <div>
+                expected_hrr_ms:{" "}
+                {Number(outputBlock.pass_metrics?.expected_hrr_ms || 0).toFixed(2)}
               </div>
               <div>
                 expected_packet_loss_penalty_ms:{" "}
                 {Number(
-                  outputBlock.classical_metrics.expected_packet_loss_penalty_ms,
+                  outputBlock.pass_metrics?.expected_packet_loss_penalty_ms || 0,
                 ).toFixed(2)}
               </div>
               <div>
                 total_handshake_ttfb_ms:{" "}
                 {Number(
-                  outputBlock.classical_metrics.total_handshake_ttfb_ms,
+                  outputBlock.pass_metrics?.total_handshake_ttfb_ms || 0,
                 ).toFixed(2)}
               </div>
             </div>
@@ -9424,7 +9684,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
                 marginBottom: 6,
               }}
             >
-              PQC HYBRID METRICS
+              HYBRID METRICS
             </div>
             <div
               style={{
@@ -9436,31 +9696,81 @@ function PQCLatencyTab({ scanModel = "general" }) {
             >
               <div>
                 tcp_segments_required:{" "}
-                {outputBlock.pqc_hybrid_metrics.tcp_segments_required}
+                {outputBlock.hybrid_metrics?.tcp_segments_required ?? 0}
               </div>
               <div>
                 extra_tcp_flights:{" "}
-                {outputBlock.pqc_hybrid_metrics.extra_tcp_flights}
+                {outputBlock.hybrid_metrics?.extra_tcp_flights ?? 0}
+              </div>
+              <div>
+                expected_hrr_ms:{" "}
+                {Number(outputBlock.hybrid_metrics?.expected_hrr_ms || 0).toFixed(2)}
               </div>
               <div>
                 expected_packet_loss_penalty_ms:{" "}
                 {Number(
-                  outputBlock.pqc_hybrid_metrics
-                    .expected_packet_loss_penalty_ms,
+                  outputBlock.hybrid_metrics?.expected_packet_loss_penalty_ms ||
+                    0,
                 ).toFixed(2)}
               </div>
               <div>
                 total_handshake_ttfb_ms:{" "}
                 {Number(
-                  outputBlock.pqc_hybrid_metrics.total_handshake_ttfb_ms,
+                  outputBlock.hybrid_metrics?.total_handshake_ttfb_ms || 0,
                 ).toFixed(2)}
               </div>
               <div>
                 latency_degradation_percentage:{" "}
                 {Number(
-                  outputBlock.pqc_hybrid_metrics.latency_degradation_percentage,
+                  outputBlock.selected_profile_metrics
+                    ?.latency_degradation_percentage || 0,
                 ).toFixed(2)}
                 %
+              </div>
+            </div>
+          </div>
+          <div
+            style={{
+              border: `1px solid rgba(220,53,69,0.38)`,
+              borderRadius: 12,
+              padding: 10,
+              background:
+                "linear-gradient(155deg, rgba(220,53,69,0.15), rgba(220,53,69,0.06))",
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            <div
+              style={{
+                color: C.red,
+                fontFamily: "Orbitron",
+                fontSize: 11,
+                marginBottom: 6,
+              }}
+            >
+              FAIL METRICS
+            </div>
+            <div
+              style={{
+                color: C.text,
+                fontFamily: "JetBrains Mono",
+                fontSize: 11,
+                lineHeight: 1.8,
+              }}
+            >
+              <div>
+                tcp_segments_required: {outputBlock.fail_metrics?.tcp_segments_required ?? 0}
+              </div>
+              <div>
+                extra_tcp_flights: {outputBlock.fail_metrics?.extra_tcp_flights ?? 0}
+              </div>
+              <div>
+                expected_hrr_ms: {Number(outputBlock.fail_metrics?.expected_hrr_ms || 0).toFixed(2)}
+              </div>
+              <div>
+                expected_packet_loss_penalty_ms: {Number(outputBlock.fail_metrics?.expected_packet_loss_penalty_ms || 0).toFixed(2)}
+              </div>
+              <div>
+                total_handshake_ttfb_ms: {Number(outputBlock.fail_metrics?.total_handshake_ttfb_ms || 0).toFixed(2)}
               </div>
             </div>
           </div>
@@ -9725,8 +10035,8 @@ function PQCLatencyTab({ scanModel = "general" }) {
               to mimic enterprise routing behavior.
             </div>
             <div>
-              - Hybrid profile increases fragment count and pushes
-              congestion-window pressure into second-flight territory.
+              - Model progression pass -> hybrid -> fail increases payload,
+              expected HRR overhead, and congestion-window pressure.
             </div>
             <div>
               - Gold chips highlight latency-critical equations; emerald chips
@@ -9805,10 +10115,8 @@ function App() {
   });
   const [unlocked, setUnlocked] = useState(false);
   const [tab, setTab] = useState("scanner");
-  const [prevTab, setPrevTab] = useState("scanner");
   const [tabFxTick, setTabFxTick] = useState(0);
   const [scanModel, setScanModel] = useState("general");
-  const [prevScanModel, setPrevScanModel] = useState("general");
   const [modeFxTick, setModeFxTick] = useState(0);
   const [modeFlash, setModeFlash] = useState(null);
   const [pendingAutoScan, setPendingAutoScan] = useState(null);
@@ -9823,6 +10131,9 @@ function App() {
   });
   const [isNarrow, setIsNarrow] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 980 : false,
+  );
+  const [isMobileWidth, setIsMobileWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 560 : false,
   );
   const [clock, setClock] = useState(new Date());
   const isTouchDevice =
@@ -9853,7 +10164,6 @@ function App() {
 
   const switchTab = (id) => {
     if (id === tab) return;
-    setPrevTab(tab);
     setTab(id);
     setTabFxTick((v) => v + 1);
   };
@@ -9861,10 +10171,8 @@ function App() {
   const handleLogout = () => {
     setUnlocked(false);
     setTab("scanner");
-    setPrevTab("scanner");
     setTabFxTick(0);
     setScanModel("general");
-    setPrevScanModel("general");
     setModeFxTick(0);
     setModeFlash(null);
     setPendingAutoScan(null);
@@ -9873,7 +10181,6 @@ function App() {
   const switchScanModel = (nextModel, options = {}) => {
     const normalized = normalizeScanModel(nextModel);
     if (normalized === scanModel) return;
-    setPrevScanModel(scanModel);
     setScanModel(normalized);
     setModeFxTick((v) => v + 1);
     const message =
@@ -9923,7 +10230,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const onResize = () => setIsNarrow(innerWidth < 980);
+    const onResize = () => {
+      setIsNarrow(innerWidth < 980);
+      setIsMobileWidth(innerWidth < 560);
+    };
     addEventListener("resize", onResize);
     onResize();
     return () => removeEventListener("resize", onResize);
@@ -9979,12 +10289,13 @@ function App() {
         }}
       >
         <aside
+          className="qh-soft-scroll"
           style={{
             position: isNarrow ? "relative" : "sticky",
             top: 0,
             alignSelf: "start",
-            height: isNarrow ? "auto" : "100vh",
-            padding: 14,
+            height: isNarrow ? (isMobileWidth ? "74vh" : "auto") : "100vh",
+            padding: isMobileWidth ? 10 : 14,
             borderRight: isNarrow
               ? "none"
               : theme === "dark"
@@ -9995,7 +10306,11 @@ function App() {
                 ? "1px solid rgba(174,158,110,0.38)"
                 : "1px solid rgba(186,161,101,0.42)"
               : "none",
-            borderRadius: isNarrow ? "0 0 26px 26px" : "0 34px 34px 0",
+            borderRadius: isNarrow
+              ? isMobileWidth
+                ? "0 0 20px 20px"
+                : "0 0 26px 26px"
+              : "0 34px 34px 0",
             background:
               theme === "dark"
                 ? "linear-gradient(165deg, rgba(35,60,46,0.9), rgba(28,49,38,0.86) 52%, rgba(22,39,30,0.84) 100%)"
@@ -10012,9 +10327,10 @@ function App() {
                 ? "26px 0 44px rgba(5,10,8,0.58), inset 0 2px 0 rgba(215,199,153,0.18), inset -2px 0 0 rgba(121,138,112,0.26), inset 10px 0 22px rgba(7,12,9,0.44), inset 0 -8px 18px rgba(4,8,6,0.3)"
                 : "24px 0 42px rgba(178,156,106,0.36), inset 0 2px 0 rgba(255,250,238,0.88), inset -2px 0 0 rgba(205,179,120,0.34), inset 10px 0 20px rgba(219,198,152,0.3), inset 0 -8px 18px rgba(184,162,114,0.2)",
             display: "grid",
-            gridTemplateRows: "auto auto 1fr auto",
-            gap: 12,
-            overflow: "hidden",
+            gridTemplateRows: "auto auto auto auto minmax(0,1fr)",
+            gap: isMobileWidth ? 8 : 12,
+            overflowX: "hidden",
+            overflowY: isNarrow ? (isMobileWidth ? "auto" : "visible") : "auto",
             transition: "box-shadow 280ms ease, border-color 240ms ease",
             animation: "none",
             isolation: "isolate",
@@ -10384,7 +10700,17 @@ function App() {
           </div>
 
           <div
-            style={{ position: "relative", zIndex: 1, display: "grid", gap: 8 }}
+            className="qh-soft-scroll"
+            style={{
+              position: "relative",
+              zIndex: 1,
+              display: "grid",
+              gap: isMobileWidth ? 6 : 8,
+              minHeight: 0,
+              overflowY: "auto",
+              maxHeight: isNarrow && isMobileWidth ? "36vh" : "none",
+              paddingRight: 2,
+            }}
           >
             {TABS.map(([id, label]) => {
               const active = tab === id;
@@ -10397,7 +10723,7 @@ function App() {
                   style={{
                     position: "relative",
                     overflow: "hidden",
-                    borderRadius: 14,
+                    borderRadius: isMobileWidth ? 12 : 14,
                     border: active
                       ? theme === "dark"
                         ? "1px solid rgba(161,175,168,0.54)"
@@ -10428,7 +10754,7 @@ function App() {
                       : theme === "dark"
                         ? "inset 0 1px 0 rgba(136,153,145,0.16)"
                         : "inset 0 1px 0 rgba(248,252,248,0.74)",
-                    padding: "10px 12px",
+                    padding: isMobileWidth ? "8px 10px" : "10px 12px",
                     textAlign: "left",
                     cursor: "pointer",
                     transform: active ? "translateX(2px)" : "translateX(0)",
@@ -10463,7 +10789,7 @@ function App() {
                     <span
                       style={{
                         fontFamily: "Orbitron",
-                        fontSize: 11,
+                        fontSize: isMobileWidth ? 10 : 11,
                         letterSpacing: active ? 1.15 : 0.8,
                         fontWeight: active ? 700 : 600,
                         textShadow:
@@ -10516,59 +10842,6 @@ function App() {
             })}
           </div>
 
-          <div
-            style={{
-              position: "relative",
-              zIndex: 1,
-              borderRadius: 14,
-              padding: "8px 10px",
-              background:
-                theme === "dark"
-                  ? "linear-gradient(165deg, rgba(44,55,51,0.74), rgba(37,47,43,0.64))"
-                  : "linear-gradient(165deg, rgba(228,240,230,0.74), rgba(214,228,216,0.64))",
-              border:
-                theme === "dark"
-                  ? "1px solid rgba(130,147,137,0.34)"
-                  : "1px solid rgba(149,173,153,0.36)",
-              boxShadow:
-                theme === "dark"
-                  ? "inset 0 0 12px rgba(124,142,132,0.1)"
-                  : "inset 2px 2px 7px rgba(167,189,172,0.26), inset -2px -2px 7px rgba(248,255,249,0.86)",
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "JetBrains Mono",
-                fontSize: 9,
-                color: theme === "dark" ? "#a9bdb2" : "#66806f",
-                letterSpacing: 1.1,
-                marginBottom: 2,
-              }}
-            >
-              TAB TRANSITION
-            </div>
-            <div
-              style={{
-                fontFamily: "Orbitron",
-                fontSize: 10,
-                letterSpacing: 0.8,
-                color: theme === "dark" ? "#dce8e0" : "#446553",
-              }}
-            >
-              {getTabLabel(prevTab)} {"->"} {getTabLabel(tab)}
-            </div>
-            <div
-              style={{
-                marginTop: 5,
-                fontFamily: "JetBrains Mono",
-                fontSize: 10,
-                color: theme === "dark" ? "#cddccd" : "#4e6758",
-              }}
-            >
-              MODEL: {scanModelUiLabel(prevScanModel)} {"->"}{" "}
-              {scanModelUiLabel(scanModel)}
-            </div>
-          </div>
         </aside>
 
         <main

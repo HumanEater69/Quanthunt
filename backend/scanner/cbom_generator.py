@@ -5,25 +5,30 @@ from typing import Any
 from ..models import AssetFinding
 
 
-def _key_exchange_algorithm(cipher_suite: str | None) -> str:
+def _key_exchange_algorithm(cipher_suite: str | None, key_exchange_group: str | None = None) -> str:
     c = (cipher_suite or "").upper()
-    if any(x in c for x in ("MLKEM", "ML-KEM", "KYBER")) and any(
-        x in c for x in ("X25519", "X448", "ECDHE", "DHE")
+    g = (key_exchange_group or "").upper()
+    blob = f"{c} {g}"
+    if any(x in blob for x in ("MLKEM", "ML-KEM", "KYBER", "0X11EC", "0X11ED")) and any(
+        x in blob for x in ("X25519", "X448", "ECDHE", "DHE", "SECP256R1")
     ):
         return "Hybrid (Classical + ML-KEM)"
-    if any(x in c for x in ("MLKEM", "ML-KEM", "KYBER")):
+    if any(x in blob for x in ("MLKEM", "ML-KEM", "KYBER", "0X11EC", "0X11ED")):
         return "ML-KEM"
-    if any(x in c for x in ("X25519", "X448", "ECDHE", "DHE", "ECDH")):
+    if any(x in blob for x in ("X25519", "X448", "ECDHE", "DHE", "ECDH")):
         return "ECDHE/DHE"
-    if "_RSA_" in c or "TLS_RSA" in c:
+    if "_RSA_" in blob or "TLS_RSA" in blob:
         return "RSA"
     return "unknown"
 
 
-def _key_exchange_family(cipher_suite: str | None) -> str:
+def _key_exchange_family(cipher_suite: str | None, key_exchange_group: str | None = None, named_group_ids: list[str] | None = None) -> str:
     c = (cipher_suite or "").upper()
-    has_pqc = any(x in c for x in ("MLKEM", "ML-KEM", "KYBER"))
-    has_classic = any(x in c for x in ("X25519", "X448", "ECDHE", "DHE", "ECDH", "RSA"))
+    g = (key_exchange_group or "").upper()
+    group_ids = " ".join(str(x).upper() for x in (named_group_ids or []))
+    blob = f"{c} {g} {group_ids}"
+    has_pqc = any(x in blob for x in ("MLKEM", "ML-KEM", "KYBER", "0X11EC", "0X11ED"))
+    has_classic = any(x in blob for x in ("X25519", "X448", "ECDHE", "DHE", "ECDH", "RSA", "SECP256R1"))
     if has_pqc and has_classic:
         return "hybrid-pqc-classical"
     if has_pqc:
@@ -59,13 +64,24 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
         cert_sig = f.tls.cert_sig_algo or ""
         cipher_up = cipher.upper()
         cert_sig_up = cert_sig.upper()
-        fips203 = any(x in cipher_up for x in ["ML-KEM", "MLKEM", "KYBER"])
+        kx_group_up = (f.tls.key_exchange_group or "").upper()
+        named_group_ids = [str(x).upper() for x in (f.tls.named_group_ids or [])]
+        supported_text = " ".join(
+            str((row or {}).get("suite") or "") + " " + str((row or {}).get("key_exchange") or "")
+            for row in (getattr(f.tls, "supported_cipher_analysis", []) or [])
+        ).upper()
+        fips203 = (
+            any(x in cipher_up for x in ["ML-KEM", "MLKEM", "KYBER"])
+            or any(x in kx_group_up for x in ["ML-KEM", "MLKEM", "KYBER", "X25519MLKEM", "SECP256R1MLKEM"])
+            or any(x in supported_text for x in ["ML-KEM", "MLKEM", "KYBER", "X25519MLKEM", "SECP256R1MLKEM"])
+            or any(x in named_group_ids for x in ["0X11EC", "0X11ED"])
+        )
         fips204 = any(x in cert_sig_up for x in ["ML-DSA", "MLDSA", "DILITHIUM"])
         fips205 = any(x in cert_sig_up for x in ["SLH-DSA", "SLHDSA", "SPHINCS"])
         pqc_detected = fips203 or fips204 or fips205
         pqc_label = "Quantum-Safe" if pqc_detected else "Classic-Secure"
-        key_exchange_algo = _key_exchange_algorithm(f.tls.cipher_suite)
-        key_exchange_family = _key_exchange_family(f.tls.cipher_suite)
+        key_exchange_algo = _key_exchange_algorithm(f.tls.cipher_suite, f.tls.key_exchange_group)
+        key_exchange_family = _key_exchange_family(f.tls.cipher_suite, f.tls.key_exchange_group, f.tls.named_group_ids)
         signature_family = _signature_algorithm_family(f.tls.cert_sig_algo)
         if key_exchange_family == "hybrid-pqc-classical" or signature_family == "pqc":
             posture_class = "pqc-capable"
@@ -83,6 +99,8 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
                         "type": "tls",
                         "version": f.tls.tls_version or "unknown",
                         "keyExchangeAlgorithm": key_exchange_algo,
+                        "keyExchangeGroup": f.tls.key_exchange_group or "unknown",
+                        "keyExchangeNamedGroupIds": named_group_ids,
                         "primaryCipherSuite": f.tls.cipher_suite or "unknown",
                         "cipherSuites": f.tls.accepted_ciphers or ([f.tls.cipher_suite] if f.tls.cipher_suite else []),
                         "supportedCipherSuiteCount": len(getattr(f.tls, "supported_cipher_suites", []) or []),
@@ -111,6 +129,8 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
                     {"name": "crypto-posture-class", "value": posture_class},
                     {"name": "key-exchange-algorithm", "value": key_exchange_algo},
                     {"name": "key-exchange-family", "value": key_exchange_family},
+                    {"name": "key-exchange-group", "value": f.tls.key_exchange_group or "unknown"},
+                    {"name": "key-exchange-named-group-ids", "value": ",".join(named_group_ids)},
                     {"name": "primary-cipher-suite", "value": f.tls.cipher_suite or "unknown"},
                     {"name": "signature-algorithm", "value": f.tls.cert_sig_algo or "unknown"},
                     {"name": "signature-family", "value": signature_family},

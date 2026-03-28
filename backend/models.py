@@ -43,7 +43,7 @@ class PqcSimRequest(BaseModel):
     domain: str | None = None
     rtt_ms: float | None = None
     loss_rate: float = 0.01
-    profile: Literal["classical", "hybrid"] = "hybrid"
+    profile: Literal["pass", "hybrid", "fail"] = "hybrid"
     endpoint_category: str = "Core Web"
     current_cipher_suite: str = "TLS_AES_128_GCM_SHA256"
     baseline_ttfb_ms: float | None = None
@@ -51,6 +51,7 @@ class PqcSimRequest(BaseModel):
 class PqcFleetExportRequest(BaseModel):
     domains: list[str]
     loss_rate: float = 0.012
+    profile: Literal["pass", "hybrid", "fail"] = "hybrid"
     baseline_ttfb_ms: float | None = None
 
 class NetworkHintsRequest(BaseModel):
@@ -70,6 +71,9 @@ class TLSInfo(BaseModel):
     cert_not_before: str | None = None
     cert_not_after: str | None = None
     cert_sig_algo: str | None = None
+    cert_public_key_bits: int | None = None
+    key_exchange_group: str | None = None
+    named_group_ids: list[str] = Field(default_factory=list)
     accepted_ciphers: list[str] = Field(default_factory=list)
     supported_cipher_suites: list[str] = Field(default_factory=list)
     cipher_components: dict[str, Any] = Field(default_factory=dict)

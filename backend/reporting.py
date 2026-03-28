@@ -11,6 +11,46 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
+from .scanner.pqc_engine import label_for_score
+
+
+def _get_tls_value(tls: object, key: str, default: object = None) -> object:
+    if isinstance(tls, dict):
+        return tls.get(key, default)
+    return getattr(tls, key, default)
+
+
+def _is_hybrid_pqc_finding(finding: dict) -> bool:
+    key_status = str(finding.get("key_exchange_status") or "").upper()
+    if key_status == "ACCEPTABLE":
+        return True
+
+    tls = finding.get("tls") or {}
+    group = str(_get_tls_value(tls, "key_exchange_group", "") or "").upper()
+    group_ids = [str(x).upper() for x in (_get_tls_value(tls, "named_group_ids", []) or [])]
+    cipher_analysis = _get_tls_value(tls, "supported_cipher_analysis", []) or []
+
+    signal_blob = " ".join(
+        [
+            group,
+            " ".join(group_ids),
+            " ".join(
+                str((row or {}).get("suite") or "") + " " + str((row or {}).get("key_exchange") or "")
+                for row in cipher_analysis
+            ).upper(),
+        ]
+    )
+    has_pqc = any(x in signal_blob for x in ("MLKEM", "ML-KEM", "KYBER", "X25519MLKEM", "SECP256R1MLKEM", "0X11EC", "0X11ED"))
+    has_classic = any(x in signal_blob for x in ("X25519", "X448", "ECDHE", "DHE", "SECP256R1", "P-256"))
+    return has_pqc and has_classic
+
+
+def hybrid_pqc_summary(scan: dict) -> tuple[int, int]:
+    findings = list(scan.get("findings", []) or [])
+    total = len(findings)
+    hybrid_count = sum(1 for f in findings if _is_hybrid_pqc_finding(f))
+    return hybrid_count, total
+
 def build_scan_pdf(scan: dict) -> bytes:
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -20,6 +60,12 @@ def build_scan_pdf(scan: dict) -> bytes:
     if findings:
         scores = [float(f.get("hndl_risk_score") or 0) for f in findings]
         avg_risk = sum(scores) / len(scores)
+    hybrid_count, hybrid_total = hybrid_pqc_summary(scan)
+    posture_text = (
+        f"Hybrid PQC observed ({hybrid_count}/{hybrid_total})"
+        if hybrid_count > 0
+        else "Hybrid PQC not observed"
+    )
 
     def draw_report_page_bg() -> None:
         c.setFillColor(colors.HexColor("#f8f3e7"))
@@ -60,6 +106,8 @@ def build_scan_pdf(scan: dict) -> bytes:
     c.drawRightString(w - 62, h - 166, f"Findings: {len(findings)}")
     c.drawRightString(w - 62, h - 184, f"Avg Risk: {avg_risk:.2f}")
     c.drawRightString(w - 62, h - 202, f"Readiness: {readiness_label(avg_risk)}")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(w - 62, h - 216, f"Posture: {posture_text}")
 
     page_no = 1
     y = h - 266
@@ -137,11 +185,7 @@ def build_scan_pdf(scan: dict) -> bytes:
     return buf.read()
 
 def readiness_label(avg_risk: float) -> str:
-    if avg_risk <= 60:
-        return "Quantum-Safe"
-    if avg_risk <= 80:
-        return "PQC Ready"
-    return "CRITICAL EXPOSURE"
+    return label_for_score(avg_risk)
 
 def _draw_optional_image(c: canvas.Canvas, env_var: str, x: float, y: float, width: float, height: float) -> bool:
     raw_path = (os.getenv(env_var) or "").strip()
@@ -267,6 +311,8 @@ def build_quantum_certificate(
     w, h = A4
     w, h = h, w
     label = readiness_label(avg_risk)
+    hybrid_count, hybrid_total = hybrid_pqc_summary(scan)
+    hybrid_suffix = f" | Hybrid PQC ({hybrid_count}/{hybrid_total})" if hybrid_count > 0 else ""
     fail_reasons = list(reasons or [])
     issued_at = datetime.now(timezone.utc)
     valid_until = issued_at + timedelta(days=365)
@@ -340,9 +386,9 @@ def build_quantum_certificate(
 
     if not eligible:
         badge_color = colors.HexColor("#8b2f2f")
-    elif label == "Quantum-Safe":
+    elif label == "Quantum-Safe (NIST Compliant)":
         badge_color = colors.HexColor("#2d6e4d")
-    elif label == "PQC Ready":
+    elif label == "Quantum-Resilient (Hybrid)":
         badge_color = colors.HexColor("#8a6a22")
     else:
         badge_color = colors.HexColor("#8b2f2f")
@@ -363,16 +409,27 @@ def build_quantum_certificate(
     c.drawCentredString(
         w / 2,
         box_y + 16,
-        f"Readiness Label: {label}" if eligible else "Readiness Label: FAILED",
+        (f"Readiness Label: {label}{hybrid_suffix}" if eligible else "Readiness Label: FAILED"),
     )
 
     info_y = box_y - 45
     c.setFillColor(colors.HexColor(text_domain))
     c.setFont("Helvetica", 12)
     c.drawCentredString(w / 2, info_y, f"Average HNDL Risk Score: {avg_risk:.2f}")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(colors.HexColor(text_secondary))
+    c.drawCentredString(
+        w / 2,
+        info_y - 16,
+        (
+            f"Top posture: Hybrid PQC observed across {hybrid_count}/{hybrid_total} assets"
+            if hybrid_count > 0
+            else "Top posture: Classical/PQC transition state"
+        ),
+    )
 
     if not eligible:
-        reason_top = info_y - 26
+        reason_top = info_y - 44
         c.setFillColor(colors.HexColor("#742b39"))
         c.setFont("Helvetica-Bold", 11)
         c.drawCentredString(w / 2, reason_top, "FAILURE REASONS")

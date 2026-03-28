@@ -12,7 +12,13 @@ from backend.models import APIInfo, AssetFinding, TLSInfo
 from backend.reporting import readiness_label
 from backend.scanner.cbom_generator import build_cbom
 from backend.scanner.cipher_parser import parse_cipher_suite
-from backend.scanner.pqc_engine import classify_key_exchange, classify_tls_version, hndl_score, label_for_score
+from backend.scanner.pqc_engine import (
+    classify_key_exchange,
+    classify_tls_version,
+    decision_tree_label,
+    hndl_score,
+    label_for_score,
+)
 
 CTX = """Source=backend
 1. pnbindia.in score=71 assets=10
@@ -23,10 +29,10 @@ CTX = """Source=backend
 
 class RiskModelTests(unittest.TestCase):
     def test_label_thresholds_align_to_srs(self) -> None:
-        self.assertEqual(label_for_score(60), "Quantum-Safe")
-        self.assertEqual(label_for_score(60.01), "PQC Ready")
-        self.assertEqual(label_for_score(80), "PQC Ready")
-        self.assertEqual(label_for_score(80.01), "CRITICAL EXPOSURE")
+        self.assertEqual(label_for_score(60), "Quantum-Safe (NIST Compliant)")
+        self.assertEqual(label_for_score(60.01), "Quantum-Resilient (Hybrid)")
+        self.assertEqual(label_for_score(80), "Quantum-Resilient (Hybrid)")
+        self.assertEqual(label_for_score(80.01), "Quantum-Vulnerable (HNDL Risk)")
 
     def test_reporting_label_matches_engine_label(self) -> None:
         for score in [0, 25, 60, 71, 80, 95]:
@@ -35,6 +41,24 @@ class RiskModelTests(unittest.TestCase):
     def test_key_exchange_tls13_not_auto_critical(self) -> None:
         self.assertEqual(classify_key_exchange("TLS_AES_256_GCM_SHA384", "TLSv1.3"), "WARNING")
         self.assertEqual(classify_key_exchange("TLS_RSA_WITH_AES_128_GCM_SHA256", "TLSv1.2"), "CRITICAL")
+
+    def test_hybrid_named_group_detected_as_transition_safe(self) -> None:
+        status = classify_key_exchange(
+            "TLS_AES_256_GCM_SHA384",
+            "TLSv1.3",
+            key_exchange_group="X25519MLKEM768",
+            named_group_ids=["0x11ec"],
+        )
+        self.assertEqual(status, "ACCEPTABLE")
+
+    def test_pure_pqc_marker_detected_as_safe(self) -> None:
+        status = classify_key_exchange(
+            "TLS_AES_256_GCM_SHA384",
+            "TLSv1.3",
+            key_exchange_group="ML-KEM",
+            named_group_ids=["0x11ec"],
+        )
+        self.assertEqual(status, "SAFE")
 
     def test_unknown_tls_is_critical(self) -> None:
         self.assertEqual(classify_tls_version(None), "CRITICAL")
@@ -55,6 +79,49 @@ class RiskModelTests(unittest.TestCase):
             cert_not_after="Jan 01 00:00:00 2028 GMT",
         )
         self.assertGreater(rsa_long_lived, base)
+
+    def test_decision_tree_marks_hybrid_as_resilient(self) -> None:
+        tls = TLSInfo(
+            host="google.com",
+            tls_version="TLSv1.3",
+            cipher_suite="TLS_AES_256_GCM_SHA384",
+            key_exchange_group="X25519MLKEM768",
+            named_group_ids=["0x11ec"],
+        )
+        kex = classify_key_exchange(
+            tls.cipher_suite,
+            tls.tls_version,
+            key_exchange_group=tls.key_exchange_group,
+            named_group_ids=tls.named_group_ids,
+        )
+        self.assertEqual(decision_tree_label(tls, kex), "Quantum-Resilient (Hybrid)")
+
+    def test_decision_tree_failed_scan(self) -> None:
+        tls = TLSInfo(host="bad.example", scan_error="timeout")
+        self.assertEqual(decision_tree_label(tls, "WARNING"), "Scan Failed/Unknown")
+
+    def test_hndl_key_length_affects_score(self) -> None:
+        short_key = hndl_score(
+            "WARNING",
+            "WARNING",
+            "TLSv1.3",
+            "WARNING",
+            "WARNING",
+            cert_public_key_bits=2048,
+            cert_not_before="Jan 01 00:00:00 2024 GMT",
+            cert_not_after="Jan 01 00:00:00 2025 GMT",
+        )
+        long_key = hndl_score(
+            "WARNING",
+            "WARNING",
+            "TLSv1.3",
+            "WARNING",
+            "WARNING",
+            cert_public_key_bits=4096,
+            cert_not_before="Jan 01 00:00:00 2024 GMT",
+            cert_not_after="Jan 01 00:00:00 2025 GMT",
+        )
+        self.assertGreater(short_key, long_key)
 
 
 class CbomLogicTests(unittest.TestCase):

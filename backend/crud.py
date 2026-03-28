@@ -277,10 +277,10 @@ def leaderboard_payload(session: Session) -> list[dict]:
 
 def _badge_status_from_score(score: float) -> str:
     if score > 80:
-        return "CRITICAL"
+        return "Quantum-Vulnerable (HNDL Risk)"
     if score > 60:
-        return "QUANTUM_SAFE"
-    return "TRANSITIONING"
+        return "Quantum-Resilient (Hybrid)"
+    return "Quantum-Safe (NIST Compliant)"
 
 def scans_list_payload(session: Session) -> list[dict]:
     scans = session.execute(select(Scan).order_by(Scan.created_at.desc())).scalars().all()
