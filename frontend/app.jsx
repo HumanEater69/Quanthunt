@@ -563,12 +563,14 @@ function ParticleField() {
   useEffect(() => {
     const c = ref.current;
     const x = c.getContext("2d");
+    const frameBudgetMs = 33;
+    let last = 0;
     const setSize = () => {
       c.width = innerWidth;
       c.height = innerHeight;
     };
     setSize();
-    const pts = Array.from({ length: 80 }, () => ({
+    const pts = Array.from({ length: 56 }, () => ({
       x: Math.random() * c.width,
       y: Math.random() * c.height,
       vx: (Math.random() - 0.5) * 0.35,
@@ -576,7 +578,12 @@ function ParticleField() {
       r: Math.random() * 1.4 + 0.2,
     }));
     let id;
-    const draw = () => {
+    const draw = (now = 0) => {
+      if (now - last < frameBudgetMs) {
+        id = requestAnimationFrame(draw);
+        return;
+      }
+      last = now;
       x.clearRect(0, 0, c.width, c.height);
       for (const p of pts) {
         p.x += p.vx;
@@ -809,7 +816,14 @@ function MatrixRain({ opacity = 0.42, zIndex = 0 }) {
     resize();
 
     let frame;
-    const draw = () => {
+    const frameBudgetMs = 42;
+    let last = 0;
+    const draw = (now = 0) => {
+      if (now - last < frameBudgetMs) {
+        frame = requestAnimationFrame(draw);
+        return;
+      }
+      last = now;
       ctx.fillStyle = "rgba(2, 8, 14, 0.16)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.font = "12px JetBrains Mono, monospace";
@@ -2036,7 +2050,7 @@ function Card({ children, style = {} }) {
             ? "0 14px 28px rgba(3,8,16,0.58), inset 0 1px 0 rgba(144,166,194,0.14), inset 0 -1px 0 rgba(6,17,31,0.56)"
             : "9px 9px 19px rgba(168,184,206,0.4), -8px -8px 18px rgba(239,243,248,0.72), inset 0 1px 0 rgba(241,245,248,0.8), inset 0 -1px 0 rgba(183,198,219,0.4)",
         transform: hover ? "translateY(-1px)" : "none",
-        transition: "all 180ms ease",
+        transition: "transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease",
         ...style,
       }}
     >
@@ -9952,8 +9966,8 @@ function App() {
                 ? "linear-gradient(165deg, rgba(35,60,46,0.9), rgba(28,49,38,0.86) 52%, rgba(22,39,30,0.84) 100%)"
                 : "linear-gradient(165deg, rgba(245,235,214,0.93), rgba(236,223,195,0.89) 52%, rgba(228,209,171,0.85) 100%)",
             backgroundSize: "100% 100%",
-            backdropFilter: "blur(38px) saturate(1.12) contrast(1.02)",
-            WebkitBackdropFilter: "blur(38px) saturate(1.12) contrast(1.02)",
+            backdropFilter: "blur(20px) saturate(1.08) contrast(1.01)",
+            WebkitBackdropFilter: "blur(20px) saturate(1.08) contrast(1.01)",
             boxShadow:
               theme === "dark"
                 ? "26px 0 44px rgba(5,10,8,0.58), inset 0 2px 0 rgba(215,199,153,0.18), inset -2px 0 0 rgba(121,138,112,0.26), inset 10px 0 22px rgba(7,12,9,0.44), inset 0 -8px 18px rgba(4,8,6,0.3)"
@@ -9962,8 +9976,7 @@ function App() {
             gridTemplateRows: "auto auto 1fr auto",
             gap: 12,
             overflow: "hidden",
-            transition:
-              "box-shadow 320ms ease, border-color 280ms ease, backdrop-filter 340ms ease",
+            transition: "box-shadow 280ms ease, border-color 240ms ease",
             animation: "none",
             isolation: "isolate",
           }}
@@ -10380,7 +10393,8 @@ function App() {
                     textAlign: "left",
                     cursor: "pointer",
                     transform: active ? "translateX(2px)" : "translateX(0)",
-                    transition: "all 280ms cubic-bezier(0.22, 1, 0.36, 1)",
+                    transition:
+                      "transform 280ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 280ms cubic-bezier(0.22, 1, 0.36, 1), border-color 240ms ease",
                   }}
                 >
                   {active && (
@@ -10542,8 +10556,8 @@ function App() {
             overflowX: "hidden",
             scrollBehavior: "smooth",
             paddingRight: isNarrow ? 0 : 8,
-            backdropFilter: "blur(24px) saturate(1.28)",
-            WebkitBackdropFilter: "blur(24px) saturate(1.28)",
+            backdropFilter: "blur(16px) saturate(1.2)",
+            WebkitBackdropFilter: "blur(16px) saturate(1.2)",
           }}
         >
           <div

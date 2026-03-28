@@ -18,7 +18,7 @@
 }
 
 .vault-access-btn {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
 }
 
@@ -74,8 +74,8 @@ code {
 }
 
 .qh-glass {
-  backdrop-filter: blur(24px) saturate(1.35);
-  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
 }
 
 .qh-glass-light {
@@ -89,6 +89,8 @@ code {
 .qh-soft-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(132, 160, 194, 0.65) transparent;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 .qh-soft-scroll::-webkit-scrollbar {
@@ -133,9 +135,9 @@ code {
   border: 1px solid rgba(160, 146, 97, 0.42);
   border-radius: 14px;
   background: linear-gradient(140deg, rgba(255, 248, 224, 0.58), rgba(212, 244, 223, 0.3));
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  box-shadow: 0 16px 34px rgba(110, 137, 87, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px) saturate(1.14);
+  -webkit-backdrop-filter: blur(10px) saturate(1.14);
+  box-shadow: 0 10px 22px rgba(110, 137, 87, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .cbom-picker-summary {
@@ -219,6 +221,16 @@ code {
 }
 
 .cbom-liquid-glass {
-  backdrop-filter: blur(20px) saturate(1.25);
-  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  backdrop-filter: blur(12px) saturate(1.16);
+  -webkit-backdrop-filter: blur(12px) saturate(1.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
