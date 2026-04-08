@@ -209,7 +209,7 @@ def certificate_readiness_label(scan: dict, avg_risk: float, eligible: bool = Tr
     label = readiness_label(avg_risk)
     hybrid_count, _ = hybrid_pqc_summary(scan)
     # Preserve hybrid certificate semantics when hybrid PQC was actually observed.
-    if hybrid_count > 0 and label == "Quantum-Safe (NIST Compliant)":
+    if hybrid_count > 0:
         return "Quantum-Resilient (Hybrid)"
     return label
 

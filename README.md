@@ -2,6 +2,36 @@
 
 FastAPI + scanner engine + glass/clay dashboard for HNDL-focused PQC posture assessment.
 
+## What Was Updated (April 2026)
+
+This repository now includes a production-grade asset discovery and TLS probing refresh focused on coverage and scoring transparency:
+
+- Deep asset discovery pipeline with CT scraping + async DNS brute-force and deduplication.
+- Multi-resolver discovery support (system resolvers + custom resolvers + optional union behavior).
+- Granular TLS probing with enforced SNI in handshake path.
+- Adaptive retry strategy for unknown TLS assets:
+  - pass 1: timeout ~4.5s, concurrency 50
+  - pass 2 (unknown only): longer timeout, lower concurrency, backoff/jitter
+- Service-aware reachability checks beyond 443:
+  - 25, 465, 587, 993, 995, 8443, 9443
+  - assets can now be classified as service-reachable even when 443 TLS profile is unavailable
+- Report bucket model for transparent scoring:
+  - `passive_discovered` (CT/passive inventory, including dead)
+  - `live_dns` (resolvable/live DNS)
+  - `live_tls_measured` (TLS profile fully captured)
+- Frontend scan summary cards now surface these three buckets plus a non-443 service-reachable badge so judges can immediately distinguish discovery coverage from TLS measurement coverage.
+
+### Wordlist Seeding Helpers
+
+To improve discovery recall for enterprise/private naming patterns, two helper scripts are included:
+
+- `scripts/seed_wordlists_from_db_catalog.py`
+  - seeds tokens from private SQLite host catalogs into scanner wordlists.
+- `scripts/import_inventory_to_wordlists.py`
+  - imports host tokens from JSON/CSV/TXT inventories and appends missing labels.
+
+Target-specific and parent-domain lists are under `backend/scanner/wordlists/`.
+
 ## Run
 
 ```powershell

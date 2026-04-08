@@ -66,6 +66,7 @@ const setRuntimeApiBase = (nextBase) => {
 
 const SCAN_MODELS = ["general", "banking"];
 const LOCAL_SCAN_ARCHIVE_KEY = "quanthunt_local_scan_archive_v1";
+const LOCAL_SAFEST_DOMAIN_KEY_PREFIX = "quanthunt_leaderboard_safest_v1";
 const normalizeScanModel = (value) =>
   SCAN_MODELS.includes(String(value || "").toLowerCase())
     ? String(value).toLowerCase()
@@ -80,6 +81,21 @@ const normalizeDomain = (value) =>
     .split("/")[0]
     .split(":")[0]
     .replace(/\/+$/, "");
+const parseListInput = (value) =>
+  Array.from(
+    new Set(
+      String(value || "")
+        .split(/[\n,;\s]+/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+const parseTriStateBoolean = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "on") return true;
+  if (normalized === "off") return false;
+  return null;
+};
 const isBankingDomainName = (domain) => {
   const host = normalizeDomain(domain);
   return (
@@ -137,31 +153,31 @@ const HAS_RECHARTS = Boolean(
 const THEMES = {
   light: {
     mode: "light",
-    bg: "#efe4cd",
-    card: "#f4ead8",
-    blue: "#c6a04b",
-    cyan: "#d4b87a",
-    orange: "#b88b33",
+    bg: "#f2e8d1",
+    card: "#f8f0dd",
+    blue: "#b48b2d",
+    cyan: "#2f8f63",
+    orange: "#c79d3c",
     red: "#8f4150",
     green: "#2f7f58",
-    yellow: "#c6a04b",
+    yellow: "#d2a84a",
     text: "#2c3428",
-    dim: "#6d6c55",
-    border: "rgba(116,103,63,0.3)",
+    dim: "#6a694f",
+    border: "rgba(160,133,72,0.3)",
   },
   dark: {
     mode: "dark",
-    bg: "#121c17",
-    card: "#1a2a22",
-    blue: "#d6b66a",
-    cyan: "#e5cc8f",
-    orange: "#d2af59",
+    bg: "#0f1712",
+    card: "#16261d",
+    blue: "#d6b35b",
+    cyan: "#77caa1",
+    orange: "#cda14d",
     red: "#b66f7b",
     green: "#7cc49a",
-    yellow: "#d9c178",
-    text: "#e5eddc",
-    dim: "#aeb69e",
-    border: "rgba(171,153,101,0.35)",
+    yellow: "#e0c463",
+    text: "#eef4e8",
+    dim: "#b3bea8",
+    border: "rgba(175,156,104,0.35)",
   },
 };
 const C = { ...THEMES.light };
@@ -2724,19 +2740,32 @@ function CyberIntelPanel({ scanModel = "general" }) {
     .map((r) => ({
       ...r,
       avg: Number(r.avg_score ?? r.average_hndl_risk ?? 0),
+      score_quality: String(r.score_quality || "fallback_unknown"),
     }))
     .filter((r) => Number.isFinite(r.avg));
-  const normalized = normalizedRows.map((r) => r.avg);
+  const comparisonRows = normalizedRows.filter(
+    (r) => r.score_quality === "measured",
+  );
+  const avgRows = comparisonRows.length ? comparisonRows : normalizedRows;
+  const rankingPool = comparisonRows.length ? comparisonRows : normalizedRows;
+  const normalized = avgRows.map((r) => r.avg);
   const avg = normalized.length
     ? (normalized.reduce((a, b) => a + b, 0) / normalized.length).toFixed(1)
     : "-";
-  const highest = [...normalizedRows].sort((a, b) => b.avg - a.avg)[0] || null;
-  const secure =
-    normalizedRows.length > 1
-      ? [...normalizedRows].sort((a, b) => a.avg - b.avg)[0]
-      : null;
+  const avgLabel = comparisonRows.length
+    ? "AVERAGE RISK (MEASURED DOMAINS)"
+    : "AVERAGE RISK (ALL SCANNED DOMAINS)";
+  const rankedDesc = [...rankingPool].sort((a, b) => b.avg - a.avg);
+  const rankedAsc = [...rankingPool].sort((a, b) => a.avg - b.avg);
+  const highest = rankedDesc[0] || null;
+  const hasSpread =
+    rankedAsc.length > 1 && rankedAsc[0].avg !== rankedAsc[rankedAsc.length - 1].avg;
+  const secure = hasSpread ? rankedAsc[0] : null;
   const secureLabel =
-    secure?.domain || (normalizedRows.length === 1 ? "Need 2+ domains" : "N/A");
+    secure?.domain ||
+    (rankingPool.length < 2
+      ? "Need 2+ domains"
+      : "All domains tied");
 
   return (
     <div
@@ -2749,7 +2778,7 @@ function CyberIntelPanel({ scanModel = "general" }) {
     >
       <Card style={{ padding: 14 }}>
         <ClayMetric
-          label="AVERAGE RISK (ALL SCANNED DOMAINS)"
+          label={avgLabel}
           value={avg}
           tone={C.cyan}
           size={20}
@@ -2762,7 +2791,9 @@ function CyberIntelPanel({ scanModel = "general" }) {
             fontSize: 10,
           }}
         >
-          Lower score means better security posture.
+          {comparisonRows.length
+            ? "Uses scans with measurable TLS evidence; lower score means better posture."
+            : "Lower score means better security posture."}
         </div>
       </Card>
       <Card style={{ padding: 14 }}>
@@ -2816,8 +2847,10 @@ function CyberIntelPanel({ scanModel = "general" }) {
             fontSize: 10,
           }}
         >
-          {normalizedRows.length === 1
+          {rankingPool.length < 2
             ? "Scan at least two domains to compare safely."
+            : !hasSpread
+              ? "All compared domains currently share the same risk score."
             : "This domain currently has the lowest average risk score."}
         </div>
       </Card>
@@ -3002,6 +3035,9 @@ function ScannerTab({
   const [showFleetStatusModal, setShowFleetStatusModal] = useState(false);
   const [fleetStatusQuery, setFleetStatusQuery] = useState("");
   const [fleetStatusFilter, setFleetStatusFilter] = useState("all");
+  const [dnsResolversInput, setDnsResolversInput] = useState("");
+  const [dnsDohEndpointsInput, setDnsDohEndpointsInput] = useState("");
+  const [dnsEnableDohMode, setDnsEnableDohMode] = useState("auto");
   const [boardroomView, setBoardroomView] = useState({
     state: null,
     why: "Run a completed scan to generate board-level PQC readiness insight.",
@@ -3046,6 +3082,47 @@ function ScannerTab({
       counts[state] += 1;
     }
     return counts;
+  }, [scanData?.assets]);
+
+  const scanReportBuckets = useMemo(() => {
+    const raw = scanData?.report_buckets || {};
+    const assets = Array.isArray(scanData?.assets) ? scanData.assets : [];
+    const parseBucket = (value, fallback) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return fallback;
+      return Math.max(0, Math.trunc(numeric));
+    };
+    return {
+      passive_discovered: parseBucket(raw.passive_discovered, assets.length),
+      live_dns: parseBucket(raw.live_dns, assets.length),
+      live_tls_measured: parseBucket(
+        raw.live_tls_measured,
+        assets.filter((asset) => Boolean(asset?.tls_measured)).length,
+      ),
+    };
+  }, [scanData?.report_buckets, scanData?.assets]);
+
+  const serviceReachability = useMemo(() => {
+    const assets = Array.isArray(scanData?.assets) ? scanData.assets : [];
+    const reachable = assets.filter((asset) =>
+      Boolean(asset?.service_reachable_non_443),
+    );
+    const ports = Array.from(
+      new Set(
+        reachable
+          .flatMap((asset) =>
+            Array.isArray(asset?.service_probe_ports)
+              ? asset.service_probe_ports
+              : [],
+          )
+          .map((port) => Number(port))
+          .filter((port) => Number.isFinite(port) && port > 0),
+      ),
+    ).sort((a, b) => a - b);
+    return {
+      count: reachable.length,
+      ports,
+    };
   }, [scanData?.assets]);
 
   const computeHndlBreakdown = (list) => {
@@ -3100,6 +3177,17 @@ function ScannerTab({
           .filter((x) => Boolean(x) && x.includes(".")),
       ),
     );
+
+  const buildDnsOverridePayload = () => {
+    const dnsResolvers = parseListInput(dnsResolversInput);
+    const dnsDohEndpoints = parseListInput(dnsDohEndpointsInput);
+    const dnsEnableDoh = parseTriStateBoolean(dnsEnableDohMode);
+    return {
+      ...(dnsResolvers.length ? { dns_resolvers: dnsResolvers } : {}),
+      ...(dnsDohEndpoints.length ? { dns_doh_endpoints: dnsDohEndpoints } : {}),
+      ...(dnsEnableDoh === null ? {} : { dns_enable_doh: dnsEnableDoh }),
+    };
+  };
 
   const readLocalArchive = () => {
     try {
@@ -3390,6 +3478,7 @@ function ScannerTab({
   };
 
   const executeScan = async (target, requestedModel, deepScan = true) => {
+    const dnsOverrides = buildDnsOverridePayload();
     const scanRequest = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3397,6 +3486,7 @@ function ScannerTab({
         domain: target,
         deep_scan: Boolean(deepScan),
         scan_model: requestedModel,
+        ...dnsOverrides,
       }),
     };
 
@@ -3535,6 +3625,7 @@ function ScannerTab({
 
     setFlashMessage(null);
     setDomain(target);
+    setScanId(null);
 
     // Optimistic UI: show full-tab scanning overlay instantly on click.
     setScanData((prev) => ({
@@ -3574,6 +3665,7 @@ function ScannerTab({
       return;
     let alive = true;
     setDomain(pendingAutoScan.domain);
+    setScanId(null);
     setScanData((prev) => ({
       ...(prev || {}),
       scan: {
@@ -3803,10 +3895,12 @@ function ScannerTab({
     const allBanking = routedModels.every((model) => model === "banking");
     const turboFleet = domains.length >= 40;
     const desiredDeepScan = allBanking && !turboFleet;
+    const dnsOverrides = buildDnsOverridePayload();
     const payload = {
       domains,
       scan_model: scanModel,
       deep_scan: desiredDeepScan,
+      ...dnsOverrides,
     };
     const trySubmitBatch = (base) =>
       fetch(`${base}/api/scan/batch`, {
@@ -4147,6 +4241,83 @@ function ScannerTab({
         <div
           style={{
             marginTop: 10,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            padding: 10,
+            background: "rgba(132,170,208,0.07)",
+            display: "grid",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              color: C.dim,
+              fontFamily: "JetBrains Mono",
+              fontSize: 11,
+            }}
+          >
+            DNS override (optional): applies to single and fleet scan requests.
+          </div>
+          <input
+            value={dnsResolversInput}
+            onChange={(e) => setDnsResolversInput(e.target.value)}
+            placeholder="Resolvers: 10.0.0.2, 10.0.0.3"
+            style={{
+              borderRadius: 10,
+              border: `1px solid ${C.border}`,
+              background: "rgba(132,170,208,0.06)",
+              color: C.text,
+              padding: "9px 11px",
+              fontFamily: "JetBrains Mono",
+              fontSize: 12,
+            }}
+          />
+          <input
+            value={dnsDohEndpointsInput}
+            onChange={(e) => setDnsDohEndpointsInput(e.target.value)}
+            placeholder="DoH endpoints: https://dns.google/resolve"
+            style={{
+              borderRadius: 10,
+              border: `1px solid ${C.border}`,
+              background: "rgba(132,170,208,0.06)",
+              color: C.text,
+              padding: "9px 11px",
+              fontFamily: "JetBrains Mono",
+              fontSize: 12,
+            }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                color: C.dim,
+                fontFamily: "JetBrains Mono",
+                fontSize: 11,
+              }}
+            >
+              DoH usage:
+            </span>
+            <select
+              value={dnsEnableDohMode}
+              onChange={(e) => setDnsEnableDohMode(e.target.value)}
+              style={{
+                borderRadius: 8,
+                border: `1px solid ${C.border}`,
+                background: "rgba(132,170,208,0.06)",
+                color: C.text,
+                padding: "6px 8px",
+                fontFamily: "JetBrains Mono",
+                fontSize: 12,
+              }}
+            >
+              <option value="auto">auto (backend default)</option>
+              <option value="on">force on</option>
+              <option value="off">force off</option>
+            </select>
+          </div>
+        </div>
+        <div
+          style={{
+            marginTop: 10,
             color: C.dim,
             fontFamily: "JetBrains Mono",
             fontSize: 12,
@@ -4179,20 +4350,165 @@ function ScannerTab({
           {scanData?.scan?.deep_scan ? "deep" : "quick"}
         </div>
 
-        {!!scanData?.assets?.length && (
+        {!!scanData?.scan?.scan_id && (
           <div
             style={{
               marginTop: 10,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              padding: 10,
-              background: "rgba(132,170,208,0.08)",
-              fontFamily: "JetBrains Mono",
-              fontSize: 11,
-              color: C.dim,
+              border: isDarkTheme()
+                ? "1px solid rgba(214,182,106,0.36)"
+                : "1px solid rgba(186,161,101,0.42)",
+              borderRadius: 14,
+              padding: 12,
+              background: isDarkTheme()
+                ? "linear-gradient(145deg, rgba(31,44,37,0.68), rgba(19,30,25,0.56))"
+                : "linear-gradient(145deg, rgba(255,249,232,0.92), rgba(237,224,190,0.76))",
+              boxShadow: isDarkTheme()
+                ? "0 12px 24px rgba(4,7,5,0.34), inset 0 1px 0 rgba(255,238,198,0.1)"
+                : "0 12px 24px rgba(168,142,90,0.16), inset 0 1px 0 rgba(255,255,255,0.85)",
+              display: "grid",
+              gap: 10,
             }}
           >
-            Scanner posture snapshot: PASS {scannerPostureCounts.pass} | HYBRID {scannerPostureCounts.hybrid} | FAIL {scannerPostureCounts.fail}
+            <div
+              style={{
+                fontFamily: "JetBrains Mono",
+                fontSize: 11,
+                color: C.dim,
+                lineHeight: 1.5,
+              }}
+            >
+              Scanner posture snapshot: PASS {scannerPostureCounts.pass} | HYBRID{" "}
+              {scannerPostureCounts.hybrid} | FAIL {scannerPostureCounts.fail}
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))",
+                gap: 10,
+              }}
+            >
+              {[
+                {
+                  key: "passive_discovered",
+                  label: "PASSIVE DISCOVERED",
+                  subtitle: "CT/passive (incl. dead)",
+                  value: scanReportBuckets.passive_discovered,
+                  tone: C.yellow,
+                  glow: "rgba(221,188,102,0.26)",
+                },
+                {
+                  key: "live_dns",
+                  label: "LIVE DNS",
+                  subtitle: "Resolvable hostnames",
+                  value: scanReportBuckets.live_dns,
+                  tone: C.cyan,
+                  glow: "rgba(106,192,156,0.24)",
+                },
+                {
+                  key: "live_tls_measured",
+                  label: "LIVE TLS MEASURED",
+                  subtitle: "Full TLS profile captured",
+                  value: scanReportBuckets.live_tls_measured,
+                  tone: C.green,
+                  glow: "rgba(90,176,125,0.24)",
+                },
+              ].map((card) => (
+                <div
+                  key={card.key}
+                  style={{
+                    borderRadius: 12,
+                    border: `1px solid ${card.tone}55`,
+                    background: darkTheme
+                      ? `linear-gradient(145deg, ${card.glow}, rgba(13,20,16,0.52))`
+                      : `linear-gradient(145deg, ${card.glow}, rgba(255,255,255,0.54))`,
+                    padding: 10,
+                    display: "grid",
+                    gap: 6,
+                    boxShadow: `0 8px 18px ${card.tone}20, inset 0 1px 0 rgba(255,255,255,0.5)`,
+                  }}
+                >
+                  <div
+                    style={{
+                      color: card.tone,
+                      fontFamily: "Orbitron",
+                      fontSize: 10,
+                      letterSpacing: 0.6,
+                    }}
+                  >
+                    {card.label}
+                  </div>
+                  <ClayNumber
+                    value={String(card.value)}
+                    tone={card.tone}
+                    size={15}
+                    minWidth={64}
+                  />
+                  <div
+                    style={{
+                      color: C.dim,
+                      fontFamily: "JetBrains Mono",
+                      fontSize: 10,
+                    }}
+                  >
+                    {card.subtitle}
+                  </div>
+                </div>
+              ))}
+              <div
+                style={{
+                  borderRadius: 12,
+                  border: `1px solid ${
+                    serviceReachability.count > 0
+                      ? `${C.green}80`
+                      : "rgba(186,161,101,0.45)"
+                  }`,
+                  background:
+                    serviceReachability.count > 0
+                      ? darkTheme
+                        ? "linear-gradient(145deg, rgba(82,165,119,0.34), rgba(18,42,28,0.62))"
+                        : "linear-gradient(145deg, rgba(210,245,221,0.82), rgba(243,255,248,0.64))"
+                      : darkTheme
+                        ? "linear-gradient(145deg, rgba(96,82,48,0.3), rgba(37,31,20,0.56))"
+                        : "linear-gradient(145deg, rgba(255,243,212,0.78), rgba(255,255,255,0.58))",
+                  padding: 10,
+                  display: "grid",
+                  gap: 6,
+                  boxShadow:
+                    serviceReachability.count > 0
+                      ? "0 10px 20px rgba(42,120,72,0.28), inset 0 1px 0 rgba(255,255,255,0.58)"
+                      : "0 8px 16px rgba(146,118,62,0.2), inset 0 1px 0 rgba(255,255,255,0.5)",
+                }}
+              >
+                <div
+                  style={{
+                    color: serviceReachability.count > 0 ? C.green : C.orange,
+                    fontFamily: "Orbitron",
+                    fontSize: 10,
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  SERVICE-REACHABLE (NON-443)
+                </div>
+                <ClayNumber
+                  value={String(serviceReachability.count)}
+                  tone={serviceReachability.count > 0 ? C.green : C.orange}
+                  size={15}
+                  minWidth={64}
+                />
+                <div
+                  style={{
+                    color: C.dim,
+                    fontFamily: "JetBrains Mono",
+                    fontSize: 10,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {serviceReachability.count > 0
+                    ? `TLS/STARTTLS reachable on ports: ${serviceReachability.ports.length ? serviceReachability.ports.join(", ") : "25, 465, 587, 993, 995, 8443, 9443"}`
+                    : "No alternate mail/custom TLS service reached yet."}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -5130,6 +5446,18 @@ function AssetMapTab({ scanModel = "general" }) {
                     : "safer"}
                 ).
               </div>
+              {a.tls_measured === false && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    color: C.orange,
+                    fontFamily: "JetBrains Mono",
+                    fontSize: 10,
+                  }}
+                >
+                  TLS diagnostics: unknown due to {String(a.tls_unknown_reason || "other").replace(/_/g, " ")}.
+                </div>
+              )}
               {vpnTags.length > 0 && (
                 <div
                   style={{
@@ -6248,6 +6576,18 @@ function LeaderboardTab({ scanModel = "general" }) {
   const [assetLoading, setAssetLoading] = useState(true);
   const [insightDomain, setInsightDomain] = useState("");
   const [safestFirst, setSafestFirst] = useState(true);
+  const safestStorageKey = `${LOCAL_SAFEST_DOMAIN_KEY_PREFIX}:${normalizeScanModel(scanModel)}`;
+  const [savedSafestDomain, setSavedSafestDomain] = useState("");
+
+  useEffect(() => {
+    try {
+      setSavedSafestDomain(
+        String(window.localStorage.getItem(safestStorageKey) || "").trim().toLowerCase(),
+      );
+    } catch {
+      setSavedSafestDomain("");
+    }
+  }, [safestStorageKey]);
 
   useEffect(() => {
     fetch(`${API}/api/leaderboard?${scanModelParam(scanModel)}`)
@@ -6334,12 +6674,26 @@ function LeaderboardTab({ scanModel = "general" }) {
     .map((r) => ({
       ...r,
       avg_score: Number(r.avg_score ?? r.average_hndl_risk ?? 0),
+      score_quality: String(r.score_quality || "fallback_unknown"),
     }))
     .sort((a, b) => b.avg_score - a.avg_score);
   const isBankingDomain = (domain) => isBankingDomainName(domain);
   const filteredNormalized = normalized.filter((r) =>
     modeIsBanking ? isBankingDomain(r.domain) : !isBankingDomain(r.domain),
   );
+  const measuredOnly = filteredNormalized.filter(
+    (r) => r.score_quality === "measured",
+  );
+  const comparisonPool = measuredOnly.length ? measuredOnly : filteredNormalized;
+  const comparisonDesc = [...comparisonPool].sort(
+    (a, b) => b.avg_score - a.avg_score,
+  );
+  const comparisonAsc = [...comparisonPool].sort(
+    (a, b) => a.avg_score - b.avg_score,
+  );
+  const hasComparableSpread =
+    comparisonAsc.length > 1 &&
+    comparisonAsc[0].avg_score !== comparisonAsc[comparisonAsc.length - 1].avg_score;
   const licenseForDomain = (domain) =>
     isBankingDomain(domain)
       ? "FINANCIAL CRYPTO LICENSE / PQC-S1"
@@ -6350,12 +6704,22 @@ function LeaderboardTab({ scanModel = "general" }) {
     if (index === 2) return "BRONZE";
     return "";
   };
-  const highestRisk = filteredNormalized[0] || null;
-  const mostSecure =
-    [...filteredNormalized].sort((a, b) => a.avg_score - b.avg_score)[0] ||
-    null;
+  const highestRisk = comparisonDesc[0] || null;
+  const mostSecure = hasComparableSpread ? comparisonAsc[0] : null;
+  const liveSafestDomain = mostSecure?.domain || "";
+  const displaySafestDomain = liveSafestDomain || savedSafestDomain || "";
   const highestRiskState = modelStateFromRiskScore(highestRisk?.avg_score);
   const mostSecureState = modelStateFromRiskScore(mostSecure?.avg_score);
+
+  useEffect(() => {
+    if (!liveSafestDomain) return;
+    try {
+      window.localStorage.setItem(safestStorageKey, liveSafestDomain);
+      setSavedSafestDomain(liveSafestDomain);
+    } catch {
+      // Ignore storage failures; the current render still has the live value.
+    }
+  }, [liveSafestDomain, safestStorageKey]);
   const fallbackAssetRows = filteredNormalized.map((r) => ({
     scan_id: r.scan_id,
     domain: r.domain,
@@ -6525,13 +6889,13 @@ function LeaderboardTab({ scanModel = "general" }) {
           </div>
           <div style={{ fontFamily: "Orbitron", color: C.green, fontSize: 16 }}>
             <PressureText glow={C.green}>
-              {mostSecure?.domain || "N/A"}
+              {displaySafestDomain || "N/A"}
             </PressureText>
           </div>
           <div style={{ marginTop: 6 }}>
             Score:{" "}
             <ClayNumber
-              value={mostSecure?.avg_score ?? "-"}
+              value={mostSecure ? mostSecure.avg_score : "-"}
               tone={C.green}
               size={10}
               minWidth={56}
@@ -6550,8 +6914,26 @@ function LeaderboardTab({ scanModel = "general" }) {
             posture. Current status: {mostSecure ? mostSecureState.toUpperCase() : "PENDING"} ({" "}
             {mostSecure
               ? postureLabelFromRiskScore(mostSecure.avg_score)
-              : "No posture yet"}
+              : displaySafestDomain
+                ? "Last saved safest domain retained locally"
+                : comparisonPool.length < 2
+                  ? "Need at least two comparable domains"
+                  : "All domains are tied"}
             ).
+          </div>
+          <div
+            style={{
+              marginTop: 6,
+              color: C.dim,
+              fontFamily: "JetBrains Mono",
+              fontSize: 10,
+            }}
+          >
+            {mostSecure
+              ? "Live safest domain saved locally and reused on refresh."
+              : savedSafestDomain
+                ? "Live data is tied or incomplete, so the last saved safest domain is shown from local storage."
+                : "No saved safest domain yet."}
           </div>
           <div
             style={{

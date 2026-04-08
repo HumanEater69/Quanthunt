@@ -226,6 +226,7 @@ def assemble_scan_payload(session: Session, scan_id: str) -> dict | None:
                 "recommendations": rec_map.get(a.id, []),
             }
         )
+    report_buckets = _extract_report_buckets_from_logs(logs)
 
     return {
         "scan_id": scan.scan_id,
@@ -238,6 +239,7 @@ def assemble_scan_payload(session: Session, scan_id: str) -> dict | None:
         "error": scan.error,
         "logs": [l.message for l in logs],
         "discovered_assets": [a.hostname for a in assets],
+        "report_buckets": report_buckets,
         "findings": packed_assets,
         "cbom": cbom.cbom_json if cbom else None,
         "chain_blocks": [
@@ -258,11 +260,22 @@ def assemble_scan_payload(session: Session, scan_id: str) -> dict | None:
 def leaderboard_payload(session: Session) -> list[dict]:
     scans = session.execute(select(Scan).order_by(Scan.created_at.desc())).scalars().all()
     rows = []
+
+    def has_measured_crypto_signal(asset: Asset) -> bool:
+        label = str(asset.label or "").strip().lower()
+        if label == "scan failed/unknown":
+            return False
+        tls_version = str(asset.tls_version or "").strip().upper()
+        cipher = str(asset.cipher_suite or "").strip()
+        return bool(cipher or (tls_version and tls_version != "UNKNOWN"))
+
     for s in scans:
         assets = session.execute(select(Asset).where(Asset.scan_id == s.scan_id)).scalars().all()
         if not assets:
             continue
-        avg = round(sum(a.risk_score for a in assets) / len(assets), 2)
+        measured_assets = [a for a in assets if has_measured_crypto_signal(a)]
+        scoring_assets = measured_assets if measured_assets else assets
+        avg = round(sum(a.risk_score for a in scoring_assets) / len(scoring_assets), 2)
         rows.append(
             {
                 "scan_id": s.scan_id,
@@ -272,6 +285,8 @@ def leaderboard_payload(session: Session) -> list[dict]:
                 "avg_score": avg,
                 "assets": len(assets),
                 "asset_count": len(assets),
+                "measured_asset_count": len(measured_assets),
+                "score_quality": "measured" if measured_assets else "fallback_unknown",
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
         )
@@ -299,6 +314,38 @@ def scans_list_payload(session: Session) -> list[dict]:
         for s in scans
     ]
 
+
+def _extract_report_buckets_from_logs(logs: list[ScanLog]) -> dict[str, int]:
+    default = {
+        "passive_discovered": 0,
+        "live_dns": 0,
+        "live_tls_measured": 0,
+    }
+    for entry in reversed(logs):
+        msg = str(entry.message or "").strip()
+        marker = None
+        if msg.startswith("[REPORT-BUCKETS-FINAL]"):
+            marker = "[REPORT-BUCKETS-FINAL]"
+        elif msg.startswith("[REPORT-BUCKETS]"):
+            marker = "[REPORT-BUCKETS]"
+        if not marker:
+            continue
+        blob = msg[len(marker):].strip()
+        try:
+            payload = json.loads(blob)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        out = dict(default)
+        for key in default:
+            try:
+                out[key] = max(0, int(payload.get(key, 0)))
+            except Exception:
+                out[key] = 0
+        return out
+    return default
+
 def scan_detail_payload(session: Session, scan_id: str) -> dict | None:
     scan = session.get(Scan, scan_id)
     if not scan:
@@ -315,6 +362,58 @@ def scan_detail_payload(session: Session, scan_id: str) -> dict | None:
     chain_blocks = session.execute(
         select(ChainBlock).where(ChainBlock.scan_id == scan_id).order_by(ChainBlock.block_index.asc())
     ).scalars().all()
+    report_buckets = _extract_report_buckets_from_logs(logs)
+
+    domain_l = str(scan.domain or "").strip().lower()
+
+    def _left_label(hostname: str) -> str:
+        h = str(hostname or "").strip().lower().rstrip(".")
+        if not h:
+            return ""
+        if domain_l and h == domain_l:
+            return ""
+        suffix = f".{domain_l}" if domain_l else ""
+        if suffix and h.endswith(suffix):
+            rel = h[: -len(suffix)]
+            return rel.split(".", 1)[0]
+        return h.split(".", 1)[0]
+
+    likely_labels = {
+        "www",
+        "api",
+        "portal",
+        "secure",
+        "auth",
+        "login",
+        "gateway",
+        "mail",
+        "vpn",
+        "mfa",
+        "sso",
+        "mobile",
+        "app",
+        "web",
+        "admin",
+        "banking",
+        "payments",
+    }
+
+    def _display_rank(row: dict) -> tuple[int, int, str]:
+        host = str(row.get("hostname") or "").strip().lower()
+        measured = bool(row.get("tls_measured"))
+        unknown_reason = str(row.get("tls_unknown_reason") or "none").strip().lower()
+        left = _left_label(host)
+        if host == domain_l:
+            return (0, 0, host)
+        if measured:
+            return (1, 0, host)
+        if unknown_reason == "service_reachable_non_443":
+            return (2, 0, host)
+        if left in likely_labels:
+            return (3, 0, host)
+        if unknown_reason == "network_blocked":
+            return (4, 0, host)
+        return (5, 0, host)
 
     assets_payload = []
     for a in assets:
@@ -327,6 +426,9 @@ def scan_detail_payload(session: Session, scan_id: str) -> dict | None:
             "ocsp": bool(tls_meta.get("ocsp_stapling")),
             "jwt_alg": (api_meta.get("jwt_algorithms") or [None])[0],
             "vpn_exposed": bool(meta.get("vpn_exposed")),
+            "tls_measured": bool(meta.get("tls_measured", False)),
+            "tls_unknown_reason": str(meta.get("tls_unknown_reason") or "none"),
+            "service_reachable_non_443": bool(meta.get("service_reachable_non_443", False)),
         }
         # Hybrid PQC detection for asset
         is_hybrid = is_hybrid_pqc_crypto(tls_meta)
@@ -341,7 +443,11 @@ def scan_detail_payload(session: Session, scan_id: str) -> dict | None:
                 "risk_score": a.risk_score,
                 "label": a.label or _badge_status_from_score(a.risk_score),
                 "metadata_json": json.dumps(flat_meta),
+                "tls_measured": bool(meta.get("tls_measured", False)),
+                "tls_unknown_reason": str(meta.get("tls_unknown_reason") or "none"),
                 "hybrid_pqc": is_hybrid,
+                "service_reachable_non_443": bool(meta.get("service_reachable_non_443", False)),
+                "service_probe_ports": list(meta.get("service_probe_ports") or []),
                 "vpn_signals": {
                     "udp_500": bool(vpn_meta.get("udp_500")),
                     "udp_4500": bool(vpn_meta.get("udp_4500")),
@@ -349,6 +455,8 @@ def scan_detail_payload(session: Session, scan_id: str) -> dict | None:
                 },
             }
         )
+
+    assets_payload = sorted(assets_payload, key=_display_rank)
 
     return {
         "scan": {
@@ -370,6 +478,7 @@ def scan_detail_payload(session: Session, scan_id: str) -> dict | None:
         ],
         "assets": assets_payload,
         "cbom": cbom.cbom_json if cbom else None,
+        "report_buckets": report_buckets,
         "chain_blocks": [
             {
                 "id": b.id,

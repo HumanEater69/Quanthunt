@@ -2,3 +2,33 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Virtual environments and accidental local Python prefixes
+.venv/
+Lib/
+
+# Scanner/runtime cache
+backend/.cache/
+
+# SQLite runtime sidecars
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Local run outputs (keep curated docs/PDFs tracked separately)
+runlogs/audit/
+runlogs/backups/
+runlogs/deep-clean-*.err.log
+runlogs/deep-clean-*.out.log
+runlogs/live_compare_*.json
+runlogs/scan_with_buckets_*.json
+runlogs/backend_recheck_audit_*.json
+runlogs/backend_reverify_*.json
+runlogs/backend_reverify_final_*.json
+runlogs/backend_reverify_final_*.md
+runlogs/cbom_demerit_audit_*.json
+
+# Accidental pip/pytest launcher drops in scripts/
+scripts/pip*.exe
+scripts/py.test.exe
+scripts/pytest.exe

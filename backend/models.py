@@ -13,11 +13,17 @@ class ScanRequest(BaseModel):
     domain: str
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
+    dns_resolvers: list[str] | None = None
+    dns_doh_endpoints: list[str] | None = None
+    dns_enable_doh: bool | None = None
 
 class BatchScanRequest(BaseModel):
     domains: list[str]
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
+    dns_resolvers: list[str] | None = None
+    dns_doh_endpoints: list[str] | None = None
+    dns_enable_doh: bool | None = None
 
 class BatchProgressScanRef(BaseModel):
     scan_id: str
@@ -61,11 +67,19 @@ class NetworkHintsRequest(BaseModel):
     rtt_ms: float | None = None
     vpn_hint: bool | None = None
 
+class ExpectedHostsAuditJsonRequest(BaseModel):
+    expected_hosts: list[str] = Field(default_factory=list)
+
 class TLSInfo(BaseModel):
     host: str
     port: int = 443
     tls_version: str | None = None
     cipher_suite: str | None = None
+    key_exchange_algorithm: str | None = None
+    key_exchange_family: str | None = None
+    key_encapsulation_mechanism: str | None = None
+    signature_algorithm: str | None = None
+    network_status: str | None = None
     cert_subject: str | None = None
     cert_issuer: str | None = None
     cert_not_before: str | None = None
