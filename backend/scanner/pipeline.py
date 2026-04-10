@@ -58,6 +58,14 @@ def _float_env(name: str, default: float, min_value: float = 0.1) -> float:
         return default
 
 
+def _discovery_timeout_for_scan(deep_scan: bool) -> float:
+    base_timeout = _float_env("SCAN_DISCOVERY_TIMEOUT_SEC", 45.0)
+    if not deep_scan:
+        return base_timeout
+    # Deep scans need a wider CT/DNS window to avoid dropping into root-only fallback.
+    return _float_env("SCAN_DISCOVERY_TIMEOUT_SEC_DEEP", max(base_timeout, 120.0))
+
+
 def _tls_failure_bucket(scan_error: str | None) -> str:
     msg = str(scan_error or "").strip().lower()
     if not msg:
@@ -331,7 +339,7 @@ async def run_scan_pipeline(
         tls_pass2_concurrency = min(10, _int_env("SCAN_TLS_PASS2_CONCURRENCY", 10))
         api_timeout_sec = _float_env("SCAN_API_TIMEOUT_SEC", 3.2, min_value=1.0)
         service_probe_timeout_sec = _float_env("SCAN_SERVICE_PROBE_TIMEOUT_SEC", 3.5, min_value=1.0)
-        discovery_timeout_sec = _float_env("SCAN_DISCOVERY_TIMEOUT_SEC", 45.0)
+        discovery_timeout_sec = _discovery_timeout_for_scan(deep_scan)
         ai_timeout_sec = _float_env("SCAN_AI_TIMEOUT_SEC", 0.9)
         log_every = _int_env("SCAN_PROGRESS_LOG_EVERY", 10)
         external_ai_budget = _int_env("SCAN_EXTERNAL_AI_BUDGET", 8)

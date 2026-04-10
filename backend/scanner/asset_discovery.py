@@ -31,6 +31,12 @@ MULTI_RESOLVER_NSLOOKUP_TIMEOUT_SEC = 2.8
 AUTHORITATIVE_NS_MAX = 8
 MULTI_VANTAGE_TIMEOUT_SEC = 12.0
 
+# Preserve legacy target-specific coverage when historical wordlists were saved
+# under an older hostname spelling.
+DOMAIN_WORDLIST_ALIASES: dict[str, tuple[str, ...]] = {
+    "manipurrural.bank.in": ("manipurral.bank.in",),
+}
+
 DEFAULT_WORDLIST: list[str] = [
     "mail",
     "vpn",
@@ -396,7 +402,7 @@ def _is_ip_address(value: str) -> bool:
 
 def _default_public_resolvers() -> list[str]:
     out = _parse_dns_resolvers(None)
-    for ip in ("1.1.1.1", "8.8.8.8"):
+    for ip in ("1.1.1.1", "8.8.8.8", "9.9.9.9", "208.67.222.222"):
         if ip not in out:
             out.append(ip)
     return out
@@ -579,8 +585,16 @@ async def _discover_from_multi_vantage(domain: str) -> set[str]:
 
 
 def _candidate_wordlist_paths(domain: str) -> list[Path]:
-    labels = [x for x in _normalize_domain(domain).split(".") if x]
+    domain_l = _normalize_domain(domain)
+    labels = [x for x in domain_l.split(".") if x]
     names: list[str] = [".".join(labels[idx:]) for idx in range(0, max(len(labels) - 1, 1))]
+    for alias in DOMAIN_WORDLIST_ALIASES.get(domain_l, ()):
+        alias_l = _normalize_domain(alias)
+        if not alias_l:
+            continue
+        alias_labels = [x for x in alias_l.split(".") if x]
+        names.extend(".".join(alias_labels[idx:]) for idx in range(0, max(len(alias_labels) - 1, 1)))
+    names = _dedupe_domain_like(names)
 
     roots = [Path(__file__).resolve().parent / "wordlists"]
     override_root = os.getenv("SCAN_DOMAIN_WORDLIST_DIR", "").strip()
@@ -663,7 +677,7 @@ class _AsyncResolver:
                 continue
             seen_targets.add(key)
             self._resolver_targets.append(str(resolver).strip())
-        max_servers = max(2, int(os.getenv("SCAN_DNS_NSLOOKUP_RESOLVER_LIMIT", "4")))
+        max_servers = max(2, int(os.getenv("SCAN_DNS_NSLOOKUP_RESOLVER_LIMIT", "6")))
         self._resolver_targets = self._resolver_targets[:max_servers]
 
         if aiodns is not None:
