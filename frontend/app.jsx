@@ -3024,6 +3024,7 @@ function ScannerTab({
   pendingAutoScan = null,
   onAutoScanConsumed = () => {},
 }) {
+  const CONNECTED_FLASH_SESSION_KEY = "qh_connected_flash_seen_v1";
   const [domain, setDomain] = useState("");
   const [scanId, setScanId] = useState(null);
   const [scanData, setScanData] = useState(null);
@@ -3060,6 +3061,50 @@ function ScannerTab({
       return () => clearTimeout(timer);
     }
   }, [flashMessage]);
+
+  useEffect(() => {
+    let alive = true;
+    const isHostedVercel =
+      typeof window !== "undefined" &&
+      String(window.location.hostname || "").includes("vercel.app");
+    if (!isHostedVercel) return;
+
+    try {
+      const seen = String(sessionStorage.getItem(CONNECTED_FLASH_SESSION_KEY) || "");
+      if (seen === "1") return;
+    } catch {
+      // Ignore storage read failures.
+    }
+
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/persistence-status`);
+        if (!r.ok) return;
+        const status = await r.json().catch(() => null);
+        if (!alive || !status) return;
+        if (Boolean(status.enabled) && Boolean(status.connected)) {
+          setFlashMessage({
+            type: "success",
+            tone: "emerald-gold",
+            durationMs: 5200,
+            text:
+              "LINK SECURED: VERCEL UI + RAILWAY API + MONGODB MIRROR ONLINE",
+          });
+          try {
+            sessionStorage.setItem(CONNECTED_FLASH_SESSION_KEY, "1");
+          } catch {
+            // Ignore storage write failures.
+          }
+        }
+      } catch {
+        // Connectivity toast is optional; ignore transient startup failures.
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const statusScore = (status) =>
     ({
@@ -4230,11 +4275,26 @@ function ScannerTab({
               background:
                 flashMessage.type === "error"
                   ? "linear-gradient(145deg, rgba(145,0,20,0.42), rgba(100,0,10,0.30))"
+                  : flashMessage.tone === "emerald-gold"
+                    ? "linear-gradient(145deg, rgba(39,128,87,0.78), rgba(178,142,68,0.62), rgba(25,95,69,0.74))"
                   : flashFloating
                     ? "linear-gradient(145deg, rgba(23,99,70,0.76), rgba(20,85,61,0.64))"
                     : "rgba(40,167,69,0.15)",
-              border: `1px solid ${flashMessage.type === "error" ? C.red : C.green}`,
-              color: flashMessage.type === "error" ? C.red : C.green,
+              border: `1px solid ${
+                flashMessage.type === "error"
+                  ? C.red
+                  : flashMessage.tone === "emerald-gold"
+                    ? C.yellow
+                    : C.green
+              }`,
+              color:
+                flashMessage.type === "error"
+                  ? C.red
+                  : flashMessage.tone === "emerald-gold"
+                    ? darkTheme
+                      ? "#f6e8bb"
+                      : "#3d4d28"
+                    : C.green,
               padding: "12px 18px",
               borderRadius: 12,
               marginBottom: 16,
