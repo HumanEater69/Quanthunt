@@ -41,6 +41,19 @@ from .pqc_engine import (
 )
 from .tls_inspector import inspect_tls_async, probe_service_ports_async
 
+
+def _railway_hosted_mode() -> bool:
+    return any(
+        os.getenv(name)
+        for name in (
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_PUBLIC_DOMAIN",
+            "RAILWAY_STATIC_URL",
+        )
+    )
+
 def _int_env(name: str, default: int, min_value: int = 1) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -61,11 +74,13 @@ def _float_env(name: str, default: float, min_value: float = 0.1) -> float:
 
 
 def _discovery_timeout_for_scan(deep_scan: bool) -> float:
-    base_timeout = _float_env("SCAN_DISCOVERY_TIMEOUT_SEC", 45.0)
+    railway_mode = _railway_hosted_mode()
+    base_timeout = _float_env("SCAN_DISCOVERY_TIMEOUT_SEC", 120.0 if railway_mode else 45.0)
     if not deep_scan:
         return base_timeout
     # Deep scans need a wider CT/DNS window to avoid dropping into root-only fallback.
-    return _float_env("SCAN_DISCOVERY_TIMEOUT_SEC_DEEP", max(base_timeout, 120.0))
+    deep_default = 240.0 if railway_mode else 120.0
+    return _float_env("SCAN_DISCOVERY_TIMEOUT_SEC_DEEP", max(base_timeout, deep_default))
 
 
 def _target_passive_discovered_count(domain: str) -> int | None:
@@ -434,11 +449,9 @@ async def run_scan_pipeline(
         # If discovery visibility is restricted (e.g., private DNS), include heuristic candidates
         # so the scan still surfaces a fuller inventory with explicit DNS/TLS failure reasons.
         if len(discovered_assets) <= 1 and os.getenv("SCAN_INCLUDE_UNRESOLVED_CANDIDATES", "true").strip().lower() not in {"0", "false", "no"}:
-            candidate_limit = _int_env("SCAN_UNRESOLVED_CANDIDATE_LIMIT", 120)
-            target_passive = _target_passive_discovered_count(domain)
-            if target_passive is not None:
-                candidate_limit = min(candidate_limit, max(42, target_passive * 2))
-            passive_limit = _int_env("SCAN_PASSIVE_HEURISTIC_LIMIT", 21)
+            railway_mode = _railway_hosted_mode()
+            candidate_limit = _int_env("SCAN_UNRESOLVED_CANDIDATE_LIMIT", 480 if railway_mode else 120)
+            passive_limit = _int_env("SCAN_PASSIVE_HEURISTIC_LIMIT", 84 if railway_mode else 21)
             candidates = generate_candidate_assets(domain, limit=candidate_limit)
             if candidates:
                 before = len(discovered_assets)
@@ -485,23 +498,6 @@ async def run_scan_pipeline(
                         ),
                         18,
                     )
-
-        target_passive = _target_passive_discovered_count(domain)
-        if target_passive is not None:
-            current_passive = sorted({str(x).strip().lower() for x in (discovery_report.get("passive_discovered") or []) if str(x).strip()})
-            if len(current_passive) != target_passive:
-                candidate_pool = generate_candidate_assets(domain, limit=max(target_passive * 3, 120))
-                merged = sorted({*current_passive, *candidate_pool})
-                forced = merged[:target_passive]
-                discovery_report["passive_discovered"] = forced
-                _db_log(
-                    scan_id,
-                    (
-                        "[DISCOVERY] Applied domain passive target "
-                        f"for {domain}: {len(current_passive)} -> {len(forced)}"
-                    ),
-                    19,
-                )
 
         tls_success_hosts = _historically_tls_successful_hosts(domain)
         prioritized_assets = _prioritize_assets(
