@@ -80,7 +80,9 @@ def _cors_origins_from_env() -> list[str]:
     if raw == "*" and allow_insecure:
         return ["*"]
     origins = [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
-    return origins or default_origins
+    result = origins or default_origins
+    print(f"[CORS] Configured origins: {result}")
+    return result
 
 
 app = FastAPI(title="QUANTHUNT API", version="1.0.0")
