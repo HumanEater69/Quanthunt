@@ -38,11 +38,23 @@ def reset_active_scan_model(token: Token) -> None:
     _ACTIVE_SCAN_MODEL.reset(token)
 
 def _build_engine(url: str):
+    if url.startswith("sqlite"):
+        return create_engine(
+            url,
+            echo=False,
+            future=True,
+            connect_args={
+                "check_same_thread": False,
+                "timeout": 30,
+                "isolation_level": None,
+            },
+            pool_pre_ping=True,
+        )
     return create_engine(
         url,
         echo=False,
         future=True,
-        connect_args={"check_same_thread": False} if url.startswith("sqlite") else {},
+        connect_args={},
     )
 
 ENGINES = {model: _build_engine(url) for model, url in DATABASE_URLS.items()}

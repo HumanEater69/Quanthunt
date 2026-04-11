@@ -59,6 +59,7 @@ from .models import (
     PqcSimRequest,
     ScanRequest,
 )
+from .mongo_store import mongo_status
 from .reporting import (
     build_quantum_certificate,
     build_scan_pdf,
@@ -1439,6 +1440,46 @@ def _expected_hosts_from_uploaded_file(
     return out[: max(1, max_hosts)]
 
 
+def _scan_tls_comparison_metrics(detail: dict) -> dict[str, int | float]:
+    assets = list(detail.get("assets") or [])
+    total_assets = len(assets)
+    unknown_count = 0
+    dns_resolution_unknown = 0
+    live_only_unknown = 0
+
+    for row in assets:
+        if not isinstance(row, dict):
+            continue
+        measured = bool(row.get("tls_measured")) or bool(
+            str(row.get("tls_version") or "").strip() or str(row.get("cipher_suite") or "").strip()
+        )
+        if measured:
+            continue
+        unknown_count += 1
+        reason = str(row.get("tls_unknown_reason") or "none").strip().lower()
+        if reason == "dns_resolution":
+            dns_resolution_unknown += 1
+        else:
+            live_only_unknown += 1
+
+    live_only_denominator = max(total_assets - dns_resolution_unknown, 1)
+
+    def _pct(numer: int, denom: int) -> float:
+        if denom <= 0:
+            return 0.0
+        return round((float(numer) / float(denom)) * 100.0, 2)
+
+    return {
+        "asset_total": total_assets,
+        "live_tls_unknown": unknown_count,
+        "live_tls_unknown_rate": _pct(unknown_count, total_assets),
+        "live_tls_unknown_live_only": live_only_unknown,
+        "live_tls_unknown_live_only_rate": _pct(live_only_unknown, live_only_denominator),
+        "dns_resolution_unknown": dns_resolution_unknown,
+        "dns_resolution_unknown_rate": _pct(dns_resolution_unknown, total_assets),
+    }
+
+
 @app.get("/api/scan/{scan_id}/coverage-audit")
 async def scan_coverage_audit(
     scan_id: str,
@@ -1485,6 +1526,7 @@ async def scan_coverage_audit(
     baseline_count = len(baseline_hosts)
     discovered_count = len(discovered_in_baseline)
     coverage_pct = round((discovered_count / baseline_count) * 100.0, 2) if baseline_count else 100.0
+    comparison_metrics = _scan_tls_comparison_metrics(detail)
 
     return {
         "scan_id": scan_id,
@@ -1510,6 +1552,7 @@ async def scan_coverage_audit(
             "active_db_hosts": len(baseline_active),
             "catalog_db_hosts": len(baseline_catalog),
         },
+        "comparison_metrics": comparison_metrics,
     }
 
 
@@ -1575,6 +1618,7 @@ async def scan_coverage_audit_expected_file(
     expected_count = len(expected_hosts)
     discovered_count = len(discovered_in_expected)
     coverage_pct = round((discovered_count / expected_count) * 100.0, 2) if expected_count else 100.0
+    comparison_metrics = _scan_tls_comparison_metrics(detail)
 
     return {
         "scan_id": scan_id,
@@ -1598,6 +1642,7 @@ async def scan_coverage_audit_expected_file(
             "tls_failed_hosts": tls_failed,
             "tls_ok_hosts": tls_ok,
         },
+        "comparison_metrics": comparison_metrics,
     }
 
 
@@ -1659,6 +1704,7 @@ async def scan_coverage_audit_expected_json(
     expected_count = len(expected_list)
     discovered_count = len(discovered_in_expected)
     coverage_pct = round((discovered_count / expected_count) * 100.0, 2) if expected_count else 100.0
+    comparison_metrics = _scan_tls_comparison_metrics(detail)
 
     return {
         "scan_id": scan_id,
@@ -1681,6 +1727,7 @@ async def scan_coverage_audit_expected_json(
             "tls_failed_hosts": tls_failed,
             "tls_ok_hosts": tls_ok,
         },
+        "comparison_metrics": comparison_metrics,
     }
 
 
@@ -1688,6 +1735,15 @@ async def scan_coverage_audit_expected_json(
 def startup() -> None:
     for model, db_engine in get_all_engines().items():
         Base.metadata.create_all(bind=db_engine)
+        
+        # Enable WAL mode for SQLite to improve concurrent access
+        if db_engine.url.drivername == "sqlite":
+            with db_engine.connect() as conn:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA cache_size=-64000")
+                conn.commit()
+        
         token = set_active_scan_model(model)
         try:
             bootstrap_historical_dns_cache()
@@ -1816,6 +1872,14 @@ async def network_status(request: Request) -> dict[str, object]:
     )
     enriched["message"] = message
     return enriched
+
+
+@app.get("/api/persistence-status")
+async def persistence_status() -> dict[str, object]:
+    status = mongo_status()
+    status["default_store"] = "sqlite"
+    status["mongo_mode"] = "mirror"
+    return status
 
 
 @app.post("/api/network-status")
