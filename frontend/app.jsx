@@ -11414,6 +11414,11 @@ function App() {
     score: 0,
     message: "",
   });
+  const [backendConnection, setBackendConnection] = useState({
+    connected: false,
+    checkedAt: null,
+    apiSource: API || "same-origin (/api)",
+  });
   const [isNarrow, setIsNarrow] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 980 : false,
   );
@@ -11435,8 +11440,21 @@ function App() {
     fetch(`${API}/api/network-status`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!d) return;
+        if (!d) {
+          setBackendConnection((prev) => ({
+            ...prev,
+            connected: false,
+            checkedAt: Date.now(),
+            apiSource: API || "same-origin (/api)",
+          }));
+          return;
+        }
         setNetworkStatus(d);
+        setBackendConnection({
+          connected: true,
+          checkedAt: Date.now(),
+          apiSource: API || "same-origin (/api)",
+        });
       })
       .catch(() => {
         setNetworkStatus({
@@ -11447,6 +11465,11 @@ function App() {
           reason: "",
           score: 0,
           message: "Network check unavailable",
+        });
+        setBackendConnection({
+          connected: false,
+          checkedAt: Date.now(),
+          apiSource: API || "same-origin (/api)",
         });
       });
   };
@@ -11898,6 +11921,28 @@ function App() {
                     ? "DETECTED (PERMISSIBLE)"
                     : "DETECTED"
                   : "NOT DETECTED"}
+            </div>
+            <div
+              style={{
+                marginTop: 2,
+                fontFamily: "JetBrains Mono",
+                fontSize: 10,
+                color: backendConnection.connected ? C.green : C.red,
+              }}
+            >
+              BACKEND: {backendConnection.connected ? "CONNECTED" : "DISCONNECTED"}
+            </div>
+            <div
+              style={{
+                fontFamily: "JetBrains Mono",
+                fontSize: 9,
+                color: theme === "dark" ? "#9fb6a8" : "#5f7a68",
+                opacity: 0.9,
+                wordBreak: "break-all",
+              }}
+              title={backendConnection.apiSource}
+            >
+              API: {backendConnection.apiSource}
             </div>
           </div>
 
