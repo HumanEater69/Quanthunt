@@ -60,15 +60,15 @@ const resolveApiBase = () => {
   }
   const runtimeCfgBase = configuredApiBase();
   if (runtimeCfgBase) return runtimeCfgBase;
+  // On hosted Vercel, always prefer the known production backend.
+  if (window.location.hostname.includes("vercel.app")) {
+    return RAILWAY_BACKEND;
+  }
   try {
     const savedApi = sanitizeApiBase(window.localStorage.getItem("qh_api_base"));
     if (savedApi) return savedApi;
   } catch {
     // Ignore storage/query failures and use same-origin fallback.
-  }
-  // Hosted on Vercel: use Railway backend by default
-  if (window.location.hostname.includes("vercel.app")) {
-    return RAILWAY_BACKEND;
   }
   return "";
 };
