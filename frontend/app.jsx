@@ -142,6 +142,10 @@ const LOCAL_API_FALLBACKS = ["http://127.0.0.1:8000", "http://localhost:8000"];
 const PERSONALIZATION_USER_KEY = "quanthunt_persona_user_id";
 const sanitizeApiBase = (value) => String(value || "").trim().replace(/\/+$/, "");
 const isAbsoluteHttpApi = (value) => /^https?:\/\//i.test(sanitizeApiBase(value));
+const isKnownBadApiPlaceholder = (value) => {
+  const v = String(value || "").toLowerCase();
+  return v.includes("your-old-backend") || v.includes("your-backend-url");
+};
 const createPersonalizationUserId = () => {
   const seed =
     window.crypto && typeof window.crypto.randomUUID === "function"
@@ -170,9 +174,17 @@ const resolveApiBase = () => {
     const queryApi = sanitizeApiBase(
       new URLSearchParams(window.location.search).get("api"),
     );
-    if (isAbsoluteHttpApi(queryApi)) {
+    if (isAbsoluteHttpApi(queryApi) && !isKnownBadApiPlaceholder(queryApi)) {
       window.localStorage.setItem("qh_api_base", queryApi);
       return queryApi;
+    }
+    if (queryApi && isHostedVercel) {
+      try {
+        window.localStorage.removeItem("qh_api_base");
+      } catch {}
+      if (window.history && typeof window.history.replaceState === "function") {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
     }
   } catch {
     // Ignore storage/query failures and fall back to default local behavior.
