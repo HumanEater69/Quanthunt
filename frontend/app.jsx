@@ -23,7 +23,23 @@ const Cell = RCH.Cell || (() => null);
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1"]);
 const LOCAL_API_FALLBACKS = ["http://127.0.0.1:8000", "http://localhost:8000"];
+const RAILWAY_BACKEND = "https://quanthunt-production-5687.up.railway.app";
 const sanitizeApiBase = (value) => String(value || "").trim().replace(/\/+$/, "");
+const configuredApiBase = () => {
+  try {
+    const cfgBase = sanitizeApiBase(window?.QUANTHUNT_CONFIG?.API_BASE);
+    if (cfgBase) return cfgBase;
+  } catch {
+    // Ignore malformed runtime config.
+  }
+  try {
+    const winBase = sanitizeApiBase(window?.__QH_API_BASE__);
+    if (winBase) return winBase;
+  } catch {
+    // Ignore malformed runtime config.
+  }
+  return "";
+};
 const resolveApiBase = () => {
   try {
     const queryApi = sanitizeApiBase(
@@ -42,11 +58,17 @@ const resolveApiBase = () => {
       ? ""
       : `http://${window.location.hostname}:8000`;
   }
+  const runtimeCfgBase = configuredApiBase();
+  if (runtimeCfgBase) return runtimeCfgBase;
   try {
     const savedApi = sanitizeApiBase(window.localStorage.getItem("qh_api_base"));
     if (savedApi) return savedApi;
   } catch {
     // Ignore storage/query failures and use same-origin fallback.
+  }
+  // Hosted on Vercel: use Railway backend by default
+  if (window.location.hostname.includes("vercel.app")) {
+    return RAILWAY_BACKEND;
   }
   return "";
 };
@@ -3092,12 +3114,46 @@ function ScannerTab({
       if (!Number.isFinite(numeric)) return fallback;
       return Math.max(0, Math.trunc(numeric));
     };
+    const parsePercent = (value, fallback) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return fallback;
+      return Math.max(0, numeric);
+    };
+    const tlsUnknownCount = assets.filter((asset) => !Boolean(asset?.tls_measured)).length;
+    const dnsResolutionUnknown = assets.filter((asset) => {
+      if (Boolean(asset?.tls_measured)) return false;
+      const reason = String(asset?.tls_unknown_reason || "").trim().toLowerCase();
+      return reason === "dns_resolution";
+    }).length;
+    const liveOnlyUnknown = Math.max(0, tlsUnknownCount - dnsResolutionUnknown);
+    const liveOnlyDenominator = Math.max(assets.length - dnsResolutionUnknown, 1);
     return {
       passive_discovered: parseBucket(raw.passive_discovered, assets.length),
       live_dns: parseBucket(raw.live_dns, assets.length),
       live_tls_measured: parseBucket(
         raw.live_tls_measured,
         assets.filter((asset) => Boolean(asset?.tls_measured)).length,
+      ),
+      live_tls_unknown: parseBucket(raw.live_tls_unknown, tlsUnknownCount),
+      live_tls_unknown_rate: parsePercent(
+        raw.live_tls_unknown_rate,
+        assets.length > 0 ? (tlsUnknownCount / assets.length) * 100 : 0,
+      ),
+      live_tls_unknown_live_only: parseBucket(
+        raw.live_tls_unknown_live_only,
+        liveOnlyUnknown,
+      ),
+      live_tls_unknown_live_only_rate: parsePercent(
+        raw.live_tls_unknown_live_only_rate,
+        (liveOnlyUnknown / liveOnlyDenominator) * 100,
+      ),
+      dns_resolution_unknown: parseBucket(
+        raw.dns_resolution_unknown,
+        dnsResolutionUnknown,
+      ),
+      dns_resolution_unknown_rate: parsePercent(
+        raw.dns_resolution_unknown_rate,
+        assets.length > 0 ? (dnsResolutionUnknown / assets.length) * 100 : 0,
       ),
     };
   }, [scanData?.report_buckets, scanData?.assets]);
@@ -4411,6 +4467,30 @@ function ScannerTab({
                   value: scanReportBuckets.live_tls_measured,
                   tone: C.green,
                   glow: "rgba(90,176,125,0.24)",
+                },
+                {
+                  key: "live_tls_unknown",
+                  label: "LIVE TLS UNKNOWN",
+                  subtitle: "Assets without TLS evidence",
+                  value: scanReportBuckets.live_tls_unknown,
+                  tone: C.orange,
+                  glow: "rgba(206,157,77,0.24)",
+                },
+                {
+                  key: "live_tls_unknown_rate",
+                  label: "GLOBAL UNKNOWN RATE",
+                  subtitle: "Unknown / all scanned assets",
+                  value: `${scanReportBuckets.live_tls_unknown_rate.toFixed(1)}%`,
+                  tone: C.red,
+                  glow: "rgba(176,103,112,0.24)",
+                },
+                {
+                  key: "live_tls_unknown_live_only_rate",
+                  label: "LIVE-ONLY UNKNOWN RATE",
+                  subtitle: "Unknown excluding DNS misses",
+                  value: `${scanReportBuckets.live_tls_unknown_live_only_rate.toFixed(1)}%`,
+                  tone: C.cyan,
+                  glow: "rgba(106,192,156,0.24)",
                 },
               ].map((card) => (
                 <div
