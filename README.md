@@ -388,4 +388,4 @@ Use type hints (Python 3.10+ syntax)
 
 📄 License
 This project is proprietary and confidential. Unauthorized copying or redistribution is prohibited.
-For licensing inquiries, contact: [25ev3002@rgipt.ac.in  ,  25cs3054rgipt.ac.in] 
+For licensing inquiries, contact: 25ev3002@rgipt.ac.in , 25cs3054@rgipt.ac.in
