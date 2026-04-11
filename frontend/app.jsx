@@ -176,10 +176,6 @@ const resolveApiBase = () => {
   } catch {
     // Ignore storage/query failures and fall back to default local behavior.
   }
-  const configuredApi = sanitizeApiBase(
-    window.QUANTHUNT_CONFIG && window.QUANTHUNT_CONFIG.API_BASE,
-  );
-  if (configuredApi) return configuredApi;
   if (window.location.protocol === "file:") return "http://127.0.0.1:8000";
   if (LOCAL_HOSTS.has(window.location.hostname)) {
     return window.location.port === "8000"
@@ -192,6 +188,10 @@ const resolveApiBase = () => {
   } catch {
     // Ignore storage/query failures and use same-origin fallback.
   }
+  const configuredApi = sanitizeApiBase(
+    window.QUANTHUNT_CONFIG && window.QUANTHUNT_CONFIG.API_BASE,
+  );
+  if (configuredApi) return configuredApi;
   if (window.location.hostname.includes("vercel.app")) {
     return RAILWAY_BACKEND;
   }
