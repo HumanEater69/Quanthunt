@@ -2884,34 +2884,15 @@ function ScanOverlay({ domain, progress }) {
   const dark = isDarkTheme();
   const rawPct = Number(progress || 0);
   const pct = Number.isFinite(rawPct) ? rawPct : 0;
-  const hasBackendProgress = pct > 1;
+  const hasBackendProgress = pct > 0;
   const [displayedPct, setDisplayedPct] = useState(() => {
-    if (hasBackendProgress) {
-      return Math.max(1, Math.min(100, pct));
-    }
-    return 6;
+    return Math.max(1, Math.min(100, pct || 1));
   });
 
   useEffect(() => {
-    if (hasBackendProgress) {
-      const next = Math.max(1, Math.min(100, pct));
-      setDisplayedPct((prev) => Math.max(prev, next));
-      return;
-    }
-    const id = setInterval(() => {
-      // Keep fallback progress monotonic until backend sends real progress.
-      // This remains visibly active for long-running domains without pretending completion.
-      setDisplayedPct((prev) => {
-        if (prev < 32) return prev + 1.35;
-        if (prev < 52) return prev + 0.72;
-        if (prev < 68) return prev + 0.34;
-        if (prev < 80) return prev + 0.15;
-        if (prev < 88) return prev + 0.07;
-        return prev;
-      });
-    }, 420);
-    return () => clearInterval(id);
-  }, [hasBackendProgress, pct]);
+    const next = Math.max(1, Math.min(100, pct || 1));
+    setDisplayedPct((prev) => Math.max(prev, next));
+  }, [pct]);
 
   const clampedDisplayed = Math.max(1, Math.min(100, displayedPct));
   const overlayNode = (
@@ -3749,7 +3730,7 @@ function ScannerTab({
 
   useEffect(() => {
     if (!polling || !scanId) return;
-    const id = setInterval(async () => {
+    const pollOnce = async () => {
       try {
         const r = await fetch(`${API}/api/scan/${scanId}`);
         if (!r.ok) {
@@ -3798,7 +3779,11 @@ function ScannerTab({
       }
       if (logRef.current)
         logRef.current.scrollTop = logRef.current.scrollHeight;
-    }, 1500);
+    };
+
+    // Poll immediately so UI sync begins without waiting for first interval.
+    pollOnce();
+    const id = setInterval(pollOnce, 800);
     return () => clearInterval(id);
   }, [polling, scanId]);
 
