@@ -11378,7 +11378,7 @@ function PQCLatencyTab({ scanModel = "general" }) {
               to mimic enterprise routing behavior.
             </div>
             <div>
-              - Model progression pass {'->'} hybrid {'->'} fail increases payload,
+              - Model progression pass -> hybrid -> fail increases payload,
               expected HRR overhead, and congestion-window pressure.
             </div>
             <div>
