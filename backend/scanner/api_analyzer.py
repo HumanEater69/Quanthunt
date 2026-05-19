@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import re
@@ -35,7 +36,23 @@ def _float_env(name: str, default: float, minimum: float = 0.1) -> float:
     except ValueError:
         return default
 
+def _is_internal_ip(ip: str) -> bool:
+    try:
+        parsed = ipaddress.ip_address(ip)
+        return parsed.is_private or parsed.is_loopback or parsed.is_link_local or parsed.is_multicast or parsed.is_unspecified
+    except ValueError:
+        return False
+
+def _is_safe_host(host: str) -> bool:
+    try:
+        ip = socket.gethostbyname(host)
+        return not _is_internal_ip(ip)
+    except socket.gaierror:
+        return False
+
 def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    if not _is_safe_host(host):
+        return False
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
@@ -59,6 +76,8 @@ def _extract_jwt_algs(text: str) -> list[str]:
     return sorted(algs)
 
 def analyze_api(host: str, timeout: float | None = None) -> APIInfo:
+    if not _is_safe_host(host):
+        return APIInfo(host=host)
     if timeout is None:
         timeout = _float_env("SCAN_API_TIMEOUT_SEC", 1.8, minimum=0.2)
     port_timeout = _float_env("SCAN_API_PORT_TIMEOUT_SEC", 0.45, minimum=0.1)

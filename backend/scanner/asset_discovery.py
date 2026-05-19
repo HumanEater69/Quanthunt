@@ -29,8 +29,8 @@ try:
 except Exception:  # pragma: no cover - optional hybrid PQC discovery
     hybrid_pqc_discovery = None
 
-DISCOVERY_CONCURRENCY_LIMIT = 50
-DNS_QUERY_TIMEOUT_SEC = 2.2
+DISCOVERY_CONCURRENCY_LIMIT = int(os.getenv("SCAN_DNS_CONCURRENCY", "300"))
+DNS_QUERY_TIMEOUT_SEC = float(os.getenv("SCAN_DNS_TIMEOUT_SEC", "1.5"))
 CRTSH_TIMEOUT_SEC = 10.0
 CRTSH_RETRY_TIMEOUTS_SEC: tuple[float, ...] = (6.0, 10.0, 14.0)
 CRTSH_MAX_TOTAL_SEC = 28.0
@@ -702,6 +702,102 @@ async def _discover_from_multi_vantage(domain: str) -> set[str]:
     return found
 
 
+async def discover_from_hackertarget(domain: str) -> set[str]:
+    """Collect subdomains from HackerTarget's free hostsearch endpoint."""
+    domain_l = _normalize_domain(domain)
+    if not domain_l:
+        return set()
+    url = f"https://api.hackertarget.com/hostsearch/?q={domain_l}"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "QuantumShield/3.0"})
+            if response.status_code >= 400:
+                return set()
+            hosts: set[str] = set()
+            for line in response.text.splitlines():
+                parts = line.split(",")
+                if not parts:
+                    continue
+                host = _normalize_domain(parts[0])
+                if host and _belongs_to_domain(host, domain_l):
+                    hosts.add(host)
+            return hosts
+    except Exception:
+        return set()
+
+
+async def discover_from_virustotal(domain: str) -> set[str]:
+    """Collect subdomains from VirusTotal when an API key is configured."""
+    api_key = os.getenv("VIRUSTOTAL_API_KEY", "").strip()
+    if not api_key:
+        return set()
+    domain_l = _normalize_domain(domain)
+    if not domain_l:
+        return set()
+    url = f"https://www.virustotal.com/api/v3/domains/{domain_l}/subdomains"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0), follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                headers={"x-apikey": api_key, "User-Agent": "QuantumShield/3.0"},
+                params={"limit": 40},
+            )
+            if response.status_code >= 400:
+                return set()
+            data = response.json()
+            hosts: set[str] = set()
+            for item in data.get("data") or []:
+                host = _normalize_domain(str((item or {}).get("id", "")))
+                if host and _belongs_to_domain(host, domain_l):
+                    hosts.add(host)
+            return hosts
+    except Exception:
+        return set()
+
+async def discover_from_alienvault(domain: str) -> set[str]:
+    """Collect subdomains from AlienVault OTX."""
+    domain_l = _normalize_domain(domain)
+    if not domain_l:
+        return set()
+    url = f"https://otx.alienvault.com/api/v1/indicators/domain/{domain_l}/passive_dns"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "QuantumShield/3.0"})
+            if response.status_code >= 400:
+                return set()
+            payload = response.json()
+            hosts: set[str] = set()
+            for record in payload.get("passive_dns") or []:
+                host = _normalize_domain(str(record.get("hostname", "")))
+                if host and _belongs_to_domain(host, domain_l):
+                    hosts.add(host)
+            return hosts
+    except Exception:
+        return set()
+
+async def discover_from_certspotter(domain: str) -> set[str]:
+    """Collect subdomains from Certspotter."""
+    domain_l = _normalize_domain(domain)
+    if not domain_l:
+        return set()
+    url = f"https://api.certspotter.com/v1/issuances?domain={domain_l}&include_subdomains=true&expand=dns_names"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "QuantumShield/3.0"})
+            if response.status_code >= 400:
+                return set()
+            payload = response.json()
+            hosts: set[str] = set()
+            for cert in payload:
+                for name in cert.get("dns_names") or []:
+                    host = _normalize_domain(str(name))
+                    if host and not host.startswith("*") and _belongs_to_domain(host, domain_l):
+                        hosts.add(host)
+            return hosts
+    except Exception:
+        return set()
+
+
 def _candidate_wordlist_paths(domain: str) -> list[Path]:
     domain_l = _normalize_domain(domain)
     labels = [x for x in domain_l.split(".") if x]
@@ -1118,9 +1214,9 @@ async def _bfs_graph_discovery(
     Nodes are domains/subdomains/IPs; edges map traversal relationships.
     """
     domain_l = _normalize_domain(domain)
-    max_depth = max(1, int(os.getenv("SCAN_DISCOVERY_BFS_DEPTH", "2")))
-    max_nodes = max(32, int(os.getenv("SCAN_DISCOVERY_BFS_MAX_NODES", "800")))
-    permute_limit = max(32, int(os.getenv("SCAN_PERMUTATION_LIMIT", "220")))
+    max_depth = max(1, int(os.getenv("SCAN_DISCOVERY_BFS_DEPTH", "3")))
+    max_nodes = max(32, int(os.getenv("SCAN_DISCOVERY_BFS_MAX_NODES", "5000")))
+    permute_limit = max(32, int(os.getenv("SCAN_PERMUTATION_LIMIT", "800")))
     host_extract_limit = max(2, int(os.getenv("SCAN_EXTRACT_HTTP_HOST_LIMIT", str(HTTP_EXTRACT_MAX_HOSTS))))
 
     seed_hosts = {_normalize_domain(h) for h in initial_hosts if _belongs_to_domain(str(h or ""), domain_l)}
@@ -1156,9 +1252,8 @@ async def _bfs_graph_discovery(
                 continue
 
             neighbors: set[str] = set()
-            # Dynamic DNS permutations generate unl inked candidate labels.
-            # To avoid scan blow-ups, only seed permutation expansions from apex/www once.
-            if not permutation_seeded and (host in permutation_targets or depth == 0):
+            # Re-seed permutations at qualifying BFS layers so newly surfaced labels can fan out.
+            if host in permutation_targets or depth == 0 or (depth < max_depth and len(passive_seen) > permute_limit):
                 neighbors.update(_build_dns_permutations(domain_l, passive_seen, permute_limit))
                 permutation_seeded = True
 
@@ -1254,8 +1349,8 @@ async def discover_from_crtsh(domain: str, timeout: float = CRTSH_TIMEOUT_SEC) -
                     continue
                 best_effort.update(_extract_hosts_from_blob(raw, domain_l))
 
-        # Once CT yields enough hosts, continue with DNS rounds rather than over-querying crt.sh.
-        if len(best_effort) >= 3:
+        # Stop early only after CT has yielded substantial coverage.
+        if len(best_effort) >= 500:
             break
 
         if attempt < len(attempt_timeouts):
@@ -1280,14 +1375,15 @@ async def discover_from_dns_bruteforce(
     if not domain_l:
         return set()
 
-    max_words = max(64, int(os.getenv("SCAN_DNS_MAX_CANDIDATES", "4000")))
+    max_words = max(64, int(os.getenv("SCAN_DNS_MAX_CANDIDATES", "8000")))  # Increased from 4000
     if max_candidates is not None:
         max_words = max(64, int(max_candidates))
     if wordlist is None:
         words = _rank_words(_expand_seed_words(_load_wordlist(domain_l)), limit=MAX_BRUTEFORCE_WORDS)
     else:
-        focused = _ordered_unique({*wordlist, *HIGH_VALUE_PREFIXES})
-        words = _rank_words(focused, limit=MAX_BRUTEFORCE_WORDS)
+        # CRITICAL: Always expand the provided wordlist to generate variants (hyphens, plurals, etc.)
+        expanded = _expand_seed_words({*wordlist, *HIGH_VALUE_PREFIXES})
+        words = _rank_words(expanded, limit=MAX_BRUTEFORCE_WORDS)
     words = words[:max_words]
     candidates = {domain_l, f"www.{domain_l}"}
     candidates.update({f"{token}.{domain_l}" for token in words})
@@ -1359,28 +1455,40 @@ async def discover_assets_async(
     bootstrap_historical_dns_cache()
     resolver = _AsyncResolver(_parse_dns_resolvers(dns_resolvers), domain=domain_l)
 
-    ct_hosts = await discover_from_crtsh(domain_l)
-    vantage_hosts = await _discover_from_multi_vantage(domain_l)
-    cert_san_hosts = _discover_hosts_from_certificate_sans(domain_l, {domain_l, *ct_hosts, *vantage_hosts})
-    passive_discovered = {domain_l, *ct_hosts, *vantage_hosts, *cert_san_hosts}
+    ct_hosts, vantage_hosts, ht_hosts, vt_hosts, av_hosts, cs_hosts = await asyncio.gather(
+        discover_from_crtsh(domain_l),
+        _discover_from_multi_vantage(domain_l),
+        discover_from_hackertarget(domain_l),
+        discover_from_virustotal(domain_l),
+        discover_from_alienvault(domain_l),
+        discover_from_certspotter(domain_l),
+    )
+    cert_san_hosts = _discover_hosts_from_certificate_sans(domain_l, {domain_l, *ct_hosts, *vantage_hosts, *ht_hosts, *vt_hosts, *av_hosts, *cs_hosts})
+    passive_discovered = {domain_l, *ct_hosts, *vantage_hosts, *ht_hosts, *vt_hosts, *av_hosts, *cs_hosts, *cert_san_hosts}
 
     # Always validate passive sources because stale CT/vantage entries are common.
-    live_ct_hosts = await _resolve_candidates_live(ct_hosts, resolver)
-    live_vantage_hosts = await _resolve_candidates_live(vantage_hosts, resolver)
-    live_cert_san_hosts = await _resolve_candidates_live(cert_san_hosts, resolver)
+    live_ct_hosts, live_vantage_hosts, live_ht_hosts, live_vt_hosts, live_av_hosts, live_cs_hosts, live_cert_san_hosts = await asyncio.gather(
+        _resolve_candidates_live(ct_hosts, resolver),
+        _resolve_candidates_live(vantage_hosts, resolver),
+        _resolve_candidates_live(ht_hosts, resolver),
+        _resolve_candidates_live(vt_hosts, resolver),
+        _resolve_candidates_live(av_hosts, resolver),
+        _resolve_candidates_live(cs_hosts, resolver),
+        _resolve_candidates_live(cert_san_hosts, resolver),
+    )
 
     ct_seed_words = _seed_tokens_from_hosts(passive_discovered, domain_l)
     history_tokens = _load_historical_inventory_tokens(domain_l)
     explicit_words = set(wordlist or [])
 
     if _railway_hosted_mode():
-        wave_1_limit = max(320, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "900")))
-        wave_2_limit = max(260, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "700")))
-        wave_3_limit = max(220, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "500")))
+        wave_1_limit = max(800, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "3000")))  # Increased from 900
+        wave_2_limit = max(600, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "2500")))  # Increased from 700
+        wave_3_limit = max(400, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "2000")))  # Increased from 500
     else:
-        wave_1_limit = max(160, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "4000")))
-        wave_2_limit = max(140, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "3000")))
-        wave_3_limit = max(120, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "2000")))
+        wave_1_limit = max(800, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "8000")))  # Increased from 4000
+        wave_2_limit = max(600, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "6000")))  # Increased from 3000
+        wave_3_limit = max(400, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "4000")))  # Increased from 2000
 
     initial_words = _rank_words(
         _expand_seed_words({*explicit_words, *ct_seed_words, *history_tokens, *get_bootstrap_dns_tokens(), *_load_wordlist(domain_l)}),
@@ -1430,7 +1538,7 @@ async def discover_assets_async(
     brute_wave_pqc: set[str] = set()
     enable_deep_pqc = _bool_env("SCAN_DEEP_PQC_DISCOVERY", default=True)
     if enable_deep_pqc and hybrid_pqc_discovery is not None:
-        pqc_limit = max(200, int(os.getenv("SCAN_DNS_WAVE_PQC_LIMIT", "300")))
+        pqc_limit = max(300, int(os.getenv("SCAN_DNS_WAVE_PQC_LIMIT", "1000")))  # Increased from 300
         pqc_words = _rank_words(
             _expand_seed_words_with_hybrid_pqc(
                 {*initial_words, *learned_tokens_wave_2, *learned_tokens_wave_3, *history_tokens},
@@ -1459,6 +1567,8 @@ async def discover_assets_async(
             domain_l,
             *live_ct_hosts,
             *live_vantage_hosts,
+            *live_ht_hosts,
+            *live_vt_hosts,
             *live_cert_san_hosts,
             *brute_wave_1,
             *brute_wave_2,
@@ -1501,6 +1611,8 @@ async def discover_assets_async(
         "authoritative_ns_resolvers": resolver.authoritative_resolver_ips(),
         "ct_passive": sorted(ct_hosts),
         "multi_vantage_passive": sorted(vantage_hosts),
+        "hackertarget_passive": sorted(ht_hosts),
+        "virustotal_passive": sorted(vt_hosts),
         "cert_san_passive": sorted(cert_san_hosts),
         "graph_nodes": int(bfs_report.get("graph_nodes", 0) or 0),
         "graph_edges": int(bfs_report.get("graph_edges", 0) or 0),

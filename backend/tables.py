@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .crypto_db import EncryptedString, EncryptedText
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -36,7 +38,7 @@ class ScanLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     scan_id: Mapped[str] = mapped_column(ForeignKey("scans.scan_id"), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    message: Mapped[str] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(EncryptedText)
 
     scan: Mapped["Scan"] = relationship(back_populates="logs")
 
@@ -66,7 +68,7 @@ class CryptoFinding(Base):
     category: Mapped[str] = mapped_column(String(64))
     algorithm: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32))
-    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[str | None] = mapped_column(EncryptedText, nullable=True)
 
     scan: Mapped["Scan"] = relationship(back_populates="findings")
     asset: Mapped["Asset"] = relationship(back_populates="findings")
@@ -78,7 +80,7 @@ class Recommendation(Base):
     scan_id: Mapped[str] = mapped_column(ForeignKey("scans.scan_id"), index=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
     phase: Mapped[str] = mapped_column(String(64), default="Phase 1")
-    text: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(EncryptedText)
 
     scan: Mapped["Scan"] = relationship(back_populates="recommendations")
     asset: Mapped["Asset"] = relationship(back_populates="recommendations")

@@ -651,9 +651,9 @@ async def inspect_tls_async(host: str, port: int = 443, timeout: float | None = 
     """
     if timeout is None:
         try:
-            timeout = max(0.75, float(os.getenv("SCAN_TLS_TIMEOUT_SEC", "4.0")))
+            timeout = max(0.5, min(float(os.getenv("SCAN_TLS_TIMEOUT_SEC", "3.0")), 5.0))
         except ValueError:
-            timeout = 4.0
+            timeout = 3.0
 
     host_l = str(host or "").strip().lower().rstrip(".")
     info = TLSInfo(host=host_l, port=port)

@@ -253,77 +253,64 @@ def hndl_score(
     domain_penalty: float = 0.0,
     domain_reward: float = 0.0,
 ) -> float:
+    WEIGHT_KE   = 0.45
+    WEIGHT_AUTH = 0.25
+    WEIGHT_TLS  = 0.15
+    WEIGHT_CERT = 0.10
+    WEIGHT_SYM  = 0.05
+
     cipher_up = (cipher_suite or "").upper()
 
-    # 50% Key Exchange risk.
-    if key_exchange == "SAFE":
-        kex_score = 0.0
-    elif key_exchange == "ACCEPTABLE":
-        kex_score = 10.0
-    elif key_exchange == "CRITICAL":
-        kex_score = 95.0
-    elif "TLS_RSA" in cipher_up or "_RSA_" in cipher_up:
-        kex_score = 100.0
-    else:
-        kex_score = 70.0
+    def _status_score(value: str | None, mapping: dict[str, float], default: float) -> float:
+        return mapping.get((value or "").strip().upper(), default)
 
-    # 20% key-size risk (certificate public key length proxy).
-    bits = int(cert_public_key_bits or 0)
-    if bits <= 0:
-        keylen_score = 65.0
-    elif bits <= 2048:
-        keylen_score = 85.0
-    elif bits <= 3072:
-        keylen_score = 55.0
-    elif bits <= 4096:
-        keylen_score = 35.0
-    else:
-        keylen_score = 20.0
+    # 45% Key Exchange risk.
+    kex_score = _status_score(
+        key_exchange,
+        {"SAFE": 0.0, "ACCEPTABLE": 20.0, "WARNING": 70.0, "CRITICAL": 95.0},
+        70.0,
+    )
+    if "TLS_RSA" in cipher_up or "_RSA_" in cipher_up:
+        kex_score = max(kex_score, 95.0)
 
-    # 15% certificate validity risk (longer-lived certs increase HNDL risk window).
-    cert_validity_score = 60.0
-
-    def _parse_cert_dt(value: str | None) -> datetime | None:
-        if not value:
-            return None
-        for fmt in ("%b %d %H:%M:%S %Y %Z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(value, fmt)
-            except ValueError:
-                continue
-        return None
-
-    not_before = _parse_cert_dt(cert_not_before)
-    not_after = _parse_cert_dt(cert_not_after)
-    if not_before and not_after and not_after > not_before:
-        validity_days = (not_after - not_before).days
-        if validity_days <= 90:
-            cert_validity_score = 10.0
-        elif validity_days <= 180:
-            cert_validity_score = 25.0
-        elif validity_days <= 397:
-            cert_validity_score = 45.0
-        elif validity_days <= 730:
-            cert_validity_score = 80.0
-        else:
-            cert_validity_score = 95.0
+    # 25% Authentication risk.
+    auth_score = _status_score(
+        auth,
+        {"SAFE": 0.0, "ACCEPTABLE": 20.0, "WARNING": 70.0, "CRITICAL": 95.0},
+        65.0, # matches step 12
+    )
 
     # 15% TLS protocol risk.
     v = (tls_version or "").upper()
     if not v or "UNKNOWN" in v or "1.0" in v or "1.1" in v:
-        tls_proto_score = 100.0
+        tls_proto_score = 95.0
     elif "1.2" in v:
-        tls_proto_score = 60.0
+        tls_proto_score = 65.0
     elif "1.3" in v:
         tls_proto_score = 20.0
     else:
-        tls_proto_score = 60.0
+        tls_proto_score = 65.0
+
+    # 10% certificate algorithm risk
+    cert_algo_score = _status_score(
+        cert_algo,
+        {"SAFE": 0.0, "ACCEPTABLE": 20.0, "WARNING": 60.0, "CRITICAL": 90.0},
+        65.0,
+    )
+    
+    # 5% symmetric cipher risk.
+    sym_score = _status_score(
+        symmetric,
+        {"SAFE": 0.0, "ACCEPTABLE": 15.0, "WARNING": 50.0, "CRITICAL": 80.0},
+        40.0,
+    )
 
     score = (
-        (kex_score * 0.50)
-        + (keylen_score * 0.20)
-        + (cert_validity_score * 0.15)
-        + (tls_proto_score * 0.15)
+        (kex_score * WEIGHT_KE)
+        + (auth_score * WEIGHT_AUTH)
+        + (tls_proto_score * WEIGHT_TLS)
+        + (cert_algo_score * WEIGHT_CERT)
+        + (sym_score * WEIGHT_SYM)
     )
 
     score = score + domain_penalty + domain_reward

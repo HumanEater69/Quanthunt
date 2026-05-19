@@ -908,7 +908,9 @@ async def run_scan_pipeline(
                 )()
             )
         cbom = build_cbom(domain, cbom_findings)
-        avg_risk = round(sum(x["hndl_risk_score"] for x in packed_findings) / max(len(packed_findings), 1), 2)
+        measured_findings = [x for x in packed_findings if _tls_measured(x["tls"])]
+        scoring_pool = measured_findings if measured_findings else packed_findings
+        avg_risk = round(sum(x["hndl_risk_score"] for x in scoring_pool) / max(len(scoring_pool), 1), 2)
         with get_session() as session:
             save_cbom(session, scan_id, cbom)
             append_chain_block(

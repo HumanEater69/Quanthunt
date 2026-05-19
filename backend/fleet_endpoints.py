@@ -29,7 +29,7 @@ from .models import (
     ReportDownloadRequest,
 )
 from .tables import Scan, Asset
-from .crud import create_scan_record, get_scan
+from .crud import create_scan as create_scan_record, get_scan
 
 
 # Global batch tracking (in production, use Redis/database)
@@ -52,53 +52,49 @@ async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
     # Spawn async tasks for each domain
     async def scan_domain(domain: str, idx: int):
         try:
+            domain_status = FleetScanStatus(domain=domain, status="running")
+            batch_status.scans.append(domain_status)
+
             with get_session() as session:
                 scan = create_scan_record(
                     session,
                     domain,
                     deep_scan=req.deep_scan,
                 )
-                domain_status = FleetScanStatus(
-                    domain=domain,
-                    scan_id=scan.scan_id,
-                    status="running",
-                )
-                batch_status.scans.append(domain_status)
+                domain_status.scan_id = scan.scan_id
 
-                # Trigger scan (simplified - in production use task queue)
-                from .backend.scanner.pipeline import run_scan_pipeline
-                await asyncio.to_thread(
-                    run_scan_pipeline,
-                    scan.scan_id,
-                    domain,
-                    req.scan_model,
-                    req.dns_resolvers,
-                    [],
-                    None,
-                )
+            # Trigger scan (the pipeline is async, so await it directly)
+            from .scanner.pipeline import run_scan_pipeline
+            await run_scan_pipeline(
+                domain_status.scan_id,
+                domain,
+                req.scan_model,
+                req.dns_resolvers,
+                [],
+                None,
+            )
 
-                # Update status
-                domain_status.status = "completed"
-                domain_status.progress = 100
+            domain_status.status = "completed"
+            domain_status.progress = 100
 
-                # Count findings
+            with get_session() as session:
                 assets = session.execute(
-                    select(Asset).where(Asset.scan_id == scan.scan_id)
+                    select(Asset).where(Asset.scan_id == domain_status.scan_id)
                 ).scalars().all()
                 domain_status.discovered_assets_count = len(assets)
                 domain_status.critical_findings = sum(
                     1 for a in assets
                     if "critical" in str(a.label or "").lower()
                 )
-                batch_status.completed += 1
 
+            batch_status.completed += 1
         except Exception as e:
-            domain_status = FleetScanStatus(
-                domain=domain,
-                status="failed",
-                error=str(e),
-            )
-            batch_status.scans.append(domain_status)
+            domain_status = next((item for item in batch_status.scans if item.domain == domain), None)
+            if domain_status is None:
+                domain_status = FleetScanStatus(domain=domain, status="failed")
+                batch_status.scans.append(domain_status)
+            domain_status.status = "failed"
+            domain_status.error = str(e)
             batch_status.failed += 1
 
     # Concurrency limiter
@@ -113,7 +109,11 @@ async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
         bounded_scan(domain, idx)
         for idx, domain in enumerate(req.domains)
     ]
-    asyncio.create_task(asyncio.gather(*tasks))
+
+    async def run_batch() -> None:
+        await asyncio.gather(*tasks)
+
+    asyncio.create_task(run_batch())
 
     return {
         "batch_id": batch_id,

@@ -270,8 +270,13 @@ def assemble_scan_payload(session: Session, scan_id: str) -> dict | None:
     }
 
 def leaderboard_payload(session: Session) -> list[dict]:
-    scans = session.execute(select(Scan).order_by(Scan.created_at.desc())).scalars().all()
+    scans = session.execute(
+        select(Scan)
+        .where(Scan.status == "completed")
+        .order_by(Scan.created_at.desc())
+    ).scalars().all()
     rows = []
+    seen_domains: set[str] = set()
 
     def has_measured_crypto_signal(asset: Asset) -> bool:
         label = str(asset.label or "").strip().lower()
@@ -282,6 +287,10 @@ def leaderboard_payload(session: Session) -> list[dict]:
         return bool(cipher or (tls_version and tls_version != "UNKNOWN"))
 
     for s in scans:
+        domain = str(s.domain or "").strip().lower()
+        if not domain or domain in seen_domains:
+            continue
+        seen_domains.add(domain)
         assets = session.execute(select(Asset).where(Asset.scan_id == s.scan_id)).scalars().all()
         if not assets:
             continue
@@ -295,6 +304,7 @@ def leaderboard_payload(session: Session) -> list[dict]:
                 "status": s.status,
                 "average_hndl_risk": avg,
                 "avg_score": avg,
+                "score": avg,
                 "assets": len(assets),
                 "asset_count": len(assets),
                 "measured_asset_count": len(measured_assets),
@@ -302,7 +312,7 @@ def leaderboard_payload(session: Session) -> list[dict]:
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
         )
-    rows.sort(key=lambda x: x["average_hndl_risk"], reverse=True)
+    rows.sort(key=lambda x: x["average_hndl_risk"])
     return rows
 
 def _badge_status_from_score(score: float) -> str:
