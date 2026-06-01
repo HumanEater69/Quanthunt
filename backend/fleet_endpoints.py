@@ -32,9 +32,32 @@ from .tables import Scan, Asset
 from .crud import create_scan as create_scan_record, get_scan
 
 
-# Global batch tracking (in production, use Redis/database)
-_FLEET_BATCHES: dict[str, FleetScanBatchStatus] = {}
+import json as _json
+from .celery_app import celery_app as _celery_app
 
+def _fleet_batch_key(batch_id: str) -> str:
+    return f"qs:fleet_batch:{batch_id}"
+
+def _save_fleet_batch(batch: FleetScanBatchStatus) -> None:
+    try:
+        backend = _celery_app.backend
+        backend.client.setex(
+            _fleet_batch_key(batch.batch_id),
+            3600,  # 1-hour TTL
+            _json.dumps(batch.model_dump() if hasattr(batch, "model_dump") else batch.dict()),
+        )
+    except Exception:
+        pass  # graceful degradation
+
+def _load_fleet_batch(batch_id: str) -> FleetScanBatchStatus | None:
+    try:
+        backend = _celery_app.backend
+        raw = backend.client.get(_fleet_batch_key(batch_id))
+        if raw:
+            return FleetScanBatchStatus(**_json.loads(raw))
+    except Exception:
+        pass
+    return None
 
 async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
     """
@@ -47,7 +70,7 @@ async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
         total_domains=len(req.domains),
         status="running",
     )
-    _FLEET_BATCHES[batch_id] = batch_status
+    _save_fleet_batch(batch_status)
 
     # Spawn async tasks for each domain
     async def scan_domain(domain: str, idx: int):
@@ -88,6 +111,7 @@ async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
                 )
 
             batch_status.completed += 1
+            _save_fleet_batch(batch_status)
         except Exception as e:
             domain_status = next((item for item in batch_status.scans if item.domain == domain), None)
             if domain_status is None:
@@ -96,6 +120,7 @@ async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
             domain_status.status = "failed"
             domain_status.error = str(e)
             batch_status.failed += 1
+            _save_fleet_batch(batch_status)
 
     # Concurrency limiter
     sem = asyncio.Semaphore(req.concurrent_scans)
@@ -124,7 +149,7 @@ async def batch_fleet_scan(req: FleetScanBatchRequest) -> dict[str, str]:
 
 async def get_fleet_batch_status(batch_id: str) -> FleetScanBatchStatus:
     """Get current status of a fleet batch scan."""
-    batch = _FLEET_BATCHES.get(batch_id)
+    batch = _load_fleet_batch(batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
     return batch

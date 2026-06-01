@@ -485,7 +485,7 @@ async def run_scan_pipeline(
                 if sub and len(sub) > 1:
                     advanced_seed_words.append(sub)
 
-        _db_log(scan_id, f"[DISCOVERY] Starting asset discovery for {domain} with {len(advanced_seed_words)} intel seeds", 5, status="running")
+        _db_log(scan_id, f"[DISCOVERY] Starting asset discovery for {domain} with {len(advanced_seed_words)} intel seeds", 15, status="running")
         try:
             discovered_assets_tuple = await asyncio.wait_for(
                 discover_assets_async(
@@ -745,8 +745,15 @@ async def run_scan_pipeline(
             for asset in assets
         ]
 
+        all_results = []
         for idx, task in enumerate(asyncio.as_completed(tasks), start=1):
-            asset, tls, api, service_probes, pqc_result = await task
+            result_tuple = await task
+            all_results.append(result_tuple)
+            progress = 20 + int((idx / total) * 65)
+            if idx == 1 or idx % log_every == 0 or idx == total:
+                _db_log(scan_id, f"[PQC] Probed {idx}/{total} assets", progress)
+
+        for idx, (asset, tls, api, service_probes, pqc_result) in enumerate(all_results, start=1):
 
             key_exchange_status = classify_key_exchange(
                 tls.cipher_suite,
@@ -854,6 +861,12 @@ async def run_scan_pipeline(
                 for i, rec in enumerate(recs):
                     add_recommendation(session, scan_id, row.id, rec, phase=phases[min(i, len(phases) - 1)])
 
+            # Mark DNS-failed assets with a sentinel so they're excluded from domain averages
+            dns_failed = not tls_measured and unknown_bucket in {
+                "dns_resolution", "network_blocked", "network_unreachable", "network_timeout",
+                "service_closed", "connection_refused",
+            }
+
             packed_findings.append(
                 {
                     "asset": asset,
@@ -861,11 +874,10 @@ async def run_scan_pipeline(
                     "api": api,
                     "hndl_risk_score": score,
                     "label": label,
+                    "dns_failed": dns_failed,
+                    "tls_measured": tls_measured,
                 }
             )
-            progress = 20 + int((idx / total) * 65)
-            if idx == 1 or idx % log_every == 0 or idx == total:
-                _db_log(scan_id, f"[PQC] Processed {idx}/{total} assets (latest: {asset} => {label}, score={score})", progress)
 
         probe_sec = time.perf_counter() - probe_started
 

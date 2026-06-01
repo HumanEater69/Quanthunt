@@ -56,6 +56,7 @@ from .models import (
     BatchProgressRequest,
     BatchScanRequest,
     ExpectedHostsAuditJsonRequest,
+    FleetScanBatchRequest,
     NetworkHintsRequest,
     PqcFleetExportRequest,
     QuantHuntChatRequest,
@@ -155,7 +156,7 @@ async def api_security_middleware(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self'"
+    response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:;"
     
     return response
 
@@ -3011,7 +3012,14 @@ async def create_batch_scan(req: BatchScanRequest) -> dict:
     domains_by_model: dict[str, list[str]] = {m: [] for m in SCAN_MODELS}
     seen_domains: set[str] = set()
 
-    for domain in req.domains:
+    if isinstance(req.domains, str):
+        # Split by comma or whitespace for bulk inputs
+        import re
+        raw_domains = [d.strip() for d in re.split(r'[\n\r,]+', req.domains) if d.strip()]
+    else:
+        raw_domains = req.domains
+
+    for domain in raw_domains:
         d = _normalize_domain(domain)
         if _is_valid_scan_domain(d):
             try:
@@ -3268,13 +3276,9 @@ async def batch_scan_progress(req: BatchProgressRequest) -> dict:
 # ============================================================================
 
 @app.post("/api/scan/fleet-batch")
-async def post_fleet_batch(req) -> dict[str, str]:
+async def post_fleet_batch(req: FleetScanBatchRequest) -> dict[str, str]:
     """Initiate batch fleet scan of multiple domains concurrently."""
     from .fleet_endpoints import batch_fleet_scan
-    from .models import FleetScanBatchRequest
-    
-    if not isinstance(req, FleetScanBatchRequest):
-        req = FleetScanBatchRequest(**req.dict() if hasattr(req, "dict") else req)
     
     return await batch_fleet_scan(req)
 

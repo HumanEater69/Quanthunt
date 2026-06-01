@@ -29,7 +29,7 @@ try:
 except Exception:  # pragma: no cover - optional hybrid PQC discovery
     hybrid_pqc_discovery = None
 
-DISCOVERY_CONCURRENCY_LIMIT = int(os.getenv("SCAN_DNS_CONCURRENCY", "300"))
+DISCOVERY_CONCURRENCY_LIMIT = int(os.getenv("SCAN_DNS_CONCURRENCY", "1000"))
 DNS_QUERY_TIMEOUT_SEC = float(os.getenv("SCAN_DNS_TIMEOUT_SEC", "1.5"))
 CRTSH_TIMEOUT_SEC = 10.0
 CRTSH_RETRY_TIMEOUTS_SEC: tuple[float, ...] = (6.0, 10.0, 14.0)
@@ -60,7 +60,7 @@ def _railway_hosted_mode() -> bool:
     )
 
 
-MAX_BRUTEFORCE_WORDS = 8000 if _railway_hosted_mode() else 25000  # Increased limits for comprehensive discovery
+MAX_BRUTEFORCE_WORDS = 1500 if _railway_hosted_mode() else 2000  # Optimized limits for faster discovery
 
 # Preserve legacy target-specific coverage when historical wordlists were saved
 # under an older hostname spelling.
@@ -775,6 +775,66 @@ async def discover_from_alienvault(domain: str) -> set[str]:
     except Exception:
         return set()
 
+async def discover_from_jldc(domain: str) -> set[str]:
+    """Collect subdomains from JLDC (Anubis)."""
+    domain_l = _normalize_domain(domain)
+    if not domain_l: return set()
+    url = f"https://jldc.me/anubis/subdomains/{domain_l}"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "QuantumShield/3.0"})
+            if response.status_code >= 400: return set()
+            payload = response.json()
+            hosts: set[str] = set()
+            for host in payload:
+                h = _normalize_domain(str(host))
+                if h and _belongs_to_domain(h, domain_l): hosts.add(h)
+            return hosts
+    except Exception:
+        return set()
+
+async def discover_from_columbus(domain: str) -> set[str]:
+    """Collect subdomains from Columbus Project API."""
+    domain_l = _normalize_domain(domain)
+    if not domain_l: return set()
+    url = f"https://columbus.elmasy.com/api/lookup/{domain_l}"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "QuantumShield/3.0", "Accept": "application/json"})
+            if response.status_code >= 400: return set()
+            hosts: set[str] = set()
+            for line in response.text.splitlines():
+                if not line.strip(): continue
+                # Columbus returns subdomain labels or full domains
+                # Sometimes it returns just the label, sometimes full
+                host_str = line.strip().strip('"')
+                h = _normalize_domain(host_str)
+                if h:
+                    fqdn = f"{h}.{domain_l}" if h != domain_l and not h.endswith(f".{domain_l}") else h
+                    if _belongs_to_domain(fqdn, domain_l): hosts.add(fqdn)
+            return hosts
+    except Exception:
+        return set()
+
+async def discover_from_urlscan(domain: str) -> set[str]:
+    """Collect subdomains from URLScan Public API."""
+    domain_l = _normalize_domain(domain)
+    if not domain_l: return set()
+    url = f"https://urlscan.io/api/v1/search/?q=domain:{domain_l}"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+            response = await client.get(url, headers={"User-Agent": "QuantumShield/3.0"})
+            if response.status_code >= 400: return set()
+            payload = response.json()
+            hosts: set[str] = set()
+            for result in payload.get("results") or []:
+                page = result.get("page") or {}
+                host = _normalize_domain(str(page.get("domain", "")))
+                if host and _belongs_to_domain(host, domain_l): hosts.add(host)
+            return hosts
+    except Exception:
+        return set()
+
 async def discover_from_certspotter(domain: str) -> set[str]:
     """Collect subdomains from Certspotter."""
     domain_l = _normalize_domain(domain)
@@ -974,19 +1034,29 @@ async def _resolve_candidates_live(
     candidates: Iterable[str],
     resolver: _AsyncResolver,
 ) -> set[str]:
+    unique_candidates = sorted({_normalize_domain(x) for x in candidates if x})
+    unique_candidates = [x for x in unique_candidates if x]
+    
+    # Cap to avoid event loop explosion from massive OSINT returns (e.g. Columbus, JLDC)
+    MAX_CANDIDATES = 15000 
+    if len(unique_candidates) > MAX_CANDIDATES:
+        unique_candidates = unique_candidates[:MAX_CANDIDATES]
+
     sem = asyncio.Semaphore(DISCOVERY_CONCURRENCY_LIMIT)
     discovered: set[str] = set()
 
     async def _probe(host: str) -> None:
-        host_l = _normalize_domain(host)
-        if not host_l:
-            return
         async with sem:
-            addrs = await resolver.resolve(host_l)
+            addrs = await resolver.resolve(host)
             if addrs:
-                discovered.add(host_l)
+                discovered.add(host)
 
-    await asyncio.gather(*(_probe(host) for host in sorted({_normalize_domain(x) for x in candidates if x})))
+    # Use chunking to avoid too many tasks in the event loop at once
+    CHUNK_SIZE = 5000
+    for i in range(0, len(unique_candidates), CHUNK_SIZE):
+        chunk = unique_candidates[i:i + CHUNK_SIZE]
+        await asyncio.gather(*(_probe(host) for host in chunk))
+        
     return discovered
 
 
@@ -1381,9 +1451,8 @@ async def discover_from_dns_bruteforce(
     if wordlist is None:
         words = _rank_words(_expand_seed_words(_load_wordlist(domain_l)), limit=MAX_BRUTEFORCE_WORDS)
     else:
-        # CRITICAL: Always expand the provided wordlist to generate variants (hyphens, plurals, etc.)
-        expanded = _expand_seed_words({*wordlist, *HIGH_VALUE_PREFIXES})
-        words = _rank_words(expanded, limit=MAX_BRUTEFORCE_WORDS)
+        # Wordlist was already expanded and ranked by the caller — use directly, just re-rank for priority
+        words = _rank_words(wordlist, limit=MAX_BRUTEFORCE_WORDS)
     words = words[:max_words]
     candidates = {domain_l, f"www.{domain_l}"}
     candidates.update({f"{token}.{domain_l}" for token in words})
@@ -1455,25 +1524,31 @@ async def discover_assets_async(
     bootstrap_historical_dns_cache()
     resolver = _AsyncResolver(_parse_dns_resolvers(dns_resolvers), domain=domain_l)
 
-    ct_hosts, vantage_hosts, ht_hosts, vt_hosts, av_hosts, cs_hosts = await asyncio.gather(
+    ct_hosts, vantage_hosts, ht_hosts, vt_hosts, av_hosts, cs_hosts, jldc_hosts, columbus_hosts, urlscan_hosts = await asyncio.gather(
         discover_from_crtsh(domain_l),
         _discover_from_multi_vantage(domain_l),
         discover_from_hackertarget(domain_l),
         discover_from_virustotal(domain_l),
         discover_from_alienvault(domain_l),
         discover_from_certspotter(domain_l),
+        discover_from_jldc(domain_l),
+        discover_from_columbus(domain_l),
+        discover_from_urlscan(domain_l),
     )
-    cert_san_hosts = _discover_hosts_from_certificate_sans(domain_l, {domain_l, *ct_hosts, *vantage_hosts, *ht_hosts, *vt_hosts, *av_hosts, *cs_hosts})
-    passive_discovered = {domain_l, *ct_hosts, *vantage_hosts, *ht_hosts, *vt_hosts, *av_hosts, *cs_hosts, *cert_san_hosts}
+    cert_san_hosts = _discover_hosts_from_certificate_sans(domain_l, {domain_l, *ct_hosts, *vantage_hosts, *ht_hosts, *vt_hosts, *av_hosts, *cs_hosts, *jldc_hosts, *columbus_hosts, *urlscan_hosts})
+    passive_discovered = {domain_l, *ct_hosts, *vantage_hosts, *ht_hosts, *vt_hosts, *av_hosts, *cs_hosts, *cert_san_hosts, *jldc_hosts, *columbus_hosts, *urlscan_hosts}
 
     # Always validate passive sources because stale CT/vantage entries are common.
-    live_ct_hosts, live_vantage_hosts, live_ht_hosts, live_vt_hosts, live_av_hosts, live_cs_hosts, live_cert_san_hosts = await asyncio.gather(
+    live_ct_hosts, live_vantage_hosts, live_ht_hosts, live_vt_hosts, live_av_hosts, live_cs_hosts, live_jldc_hosts, live_columbus_hosts, live_urlscan_hosts, live_cert_san_hosts = await asyncio.gather(
         _resolve_candidates_live(ct_hosts, resolver),
         _resolve_candidates_live(vantage_hosts, resolver),
         _resolve_candidates_live(ht_hosts, resolver),
         _resolve_candidates_live(vt_hosts, resolver),
         _resolve_candidates_live(av_hosts, resolver),
         _resolve_candidates_live(cs_hosts, resolver),
+        _resolve_candidates_live(jldc_hosts, resolver),
+        _resolve_candidates_live(columbus_hosts, resolver),
+        _resolve_candidates_live(urlscan_hosts, resolver),
         _resolve_candidates_live(cert_san_hosts, resolver),
     )
 
@@ -1482,13 +1557,13 @@ async def discover_assets_async(
     explicit_words = set(wordlist or [])
 
     if _railway_hosted_mode():
-        wave_1_limit = max(800, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "3000")))  # Increased from 900
-        wave_2_limit = max(600, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "2500")))  # Increased from 700
-        wave_3_limit = max(400, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "2000")))  # Increased from 500
+        wave_1_limit = max(400, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "500")))
+        wave_2_limit = max(200, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "300")))
+        wave_3_limit = max(100, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "200")))
     else:
-        wave_1_limit = max(800, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "8000")))  # Increased from 4000
-        wave_2_limit = max(600, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "6000")))  # Increased from 3000
-        wave_3_limit = max(400, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "4000")))  # Increased from 2000
+        wave_1_limit = max(500, int(os.getenv("SCAN_DNS_WAVE1_WORD_LIMIT", "800")))
+        wave_2_limit = max(300, int(os.getenv("SCAN_DNS_WAVE2_WORD_LIMIT", "400")))
+        wave_3_limit = max(200, int(os.getenv("SCAN_DNS_WAVE3_WORD_LIMIT", "300")))
 
     initial_words = _rank_words(
         _expand_seed_words({*explicit_words, *ct_seed_words, *history_tokens, *get_bootstrap_dns_tokens(), *_load_wordlist(domain_l)}),
@@ -1504,32 +1579,34 @@ async def discover_assets_async(
         max_candidates=wave_1_limit,
     )
 
-    # Wave 2: recursively learn labels from newly live hosts and probe deeper.
+    # Wave 2 and Wave 3 words generated first, then run waves 2 and 3 in parallel
     learned_tokens_wave_2 = _seed_tokens_from_hosts({*live_ct_hosts, *live_vantage_hosts, *brute_wave_1}, domain_l)
     wave_2_words = _rank_words(
         _expand_seed_words({*initial_words, *learned_tokens_wave_2, *history_tokens}),
         limit=wave_2_limit,
     )[:wave_2_limit]
-    brute_wave_2 = await discover_from_dns_bruteforce(
-        domain_l,
-        wordlist=wave_2_words,
-        dns_resolvers=dns_resolvers,
-        resolver=resolver,
-        max_candidates=wave_2_limit,
-    )
 
-    # Wave 3: focus on emergent host prefixes that often expose hidden internal-facing edges.
-    learned_tokens_wave_3 = _seed_tokens_from_hosts({*brute_wave_1, *brute_wave_2}, domain_l)
+    learned_tokens_wave_3 = _seed_tokens_from_hosts({*brute_wave_1, *brute_wave_1}, domain_l) # approximating since wave 2 is parallel
     wave_3_words = _rank_words(
         _expand_seed_words({*wave_2_words, *learned_tokens_wave_3, *history_tokens}),
         limit=wave_3_limit,
     )[:wave_3_limit]
-    brute_wave_3 = await discover_from_dns_bruteforce(
-        domain_l,
-        wordlist=wave_3_words,
-        dns_resolvers=dns_resolvers,
-        resolver=resolver,
-        max_candidates=wave_3_limit,
+
+    brute_wave_2, brute_wave_3 = await asyncio.gather(
+        discover_from_dns_bruteforce(
+            domain_l,
+            wordlist=wave_2_words,
+            dns_resolvers=dns_resolvers,
+            resolver=resolver,
+            max_candidates=wave_2_limit,
+        ),
+        discover_from_dns_bruteforce(
+            domain_l,
+            wordlist=wave_3_words,
+            dns_resolvers=dns_resolvers,
+            resolver=resolver,
+            max_candidates=wave_3_limit,
+        ),
     )
 
     # Deep PQC Discovery Wave (for hybrid cryptographic infrastructure)
@@ -1570,6 +1647,9 @@ async def discover_assets_async(
             *live_ht_hosts,
             *live_vt_hosts,
             *live_cert_san_hosts,
+            *live_jldc_hosts,
+            *live_columbus_hosts,
+            *live_urlscan_hosts,
             *brute_wave_1,
             *brute_wave_2,
             *brute_wave_3,
@@ -1614,6 +1694,9 @@ async def discover_assets_async(
         "hackertarget_passive": sorted(ht_hosts),
         "virustotal_passive": sorted(vt_hosts),
         "cert_san_passive": sorted(cert_san_hosts),
+        "jldc_passive": sorted(jldc_hosts),
+        "columbus_passive": sorted(columbus_hosts),
+        "urlscan_passive": sorted(urlscan_hosts),
         "graph_nodes": int(bfs_report.get("graph_nodes", 0) or 0),
         "graph_edges": int(bfs_report.get("graph_edges", 0) or 0),
         "bfs_passive": sorted(set(bfs_report.get("bfs_passive") or [])),

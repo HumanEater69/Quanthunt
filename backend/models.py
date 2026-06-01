@@ -11,20 +11,16 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 class ScanRequest(BaseModel):
-    domain: str
+    domain: str = Field(..., pattern=r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$", max_length=253)
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
-    dns_resolvers: list[str] | None = None
-    dns_doh_endpoints: list[str] | None = None
-    dns_enable_doh: bool | None = None
+    # SECURITY TARGET: Removed dns_resolvers and DoH endpoints from client payloads to prevent SSRF/DNS rebinding.
 
 class BatchScanRequest(BaseModel):
-    domains: list[str]
+    domains: list[str] = Field(..., max_items=100) # Ensure bounded list
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
-    dns_resolvers: list[str] | None = None
-    dns_doh_endpoints: list[str] | None = None
-    dns_enable_doh: bool | None = None
+    # SECURITY TARGET: Removed user-controlled resolvers
 
 class BatchProgressScanRef(BaseModel):
     scan_id: str
@@ -160,14 +156,14 @@ class ScanState(BaseModel):
 
 class FleetScanBatchRequest(BaseModel):
     """Batch request to scan multiple domains concurrently with fleet settings."""
-    domains: list[str]
+    domains: list[str] = Field(..., max_items=100) # DoS protection wrapper
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
-    concurrent_scans: int = 5  # Number of parallel scans
-    timeout_per_domain: int = 300  # Seconds per domain
+    concurrent_scans: int = Field(5, le=20) # Cap parallel scans to prevent exhaustion
+    timeout_per_domain: int = Field(300, le=600)  # Seconds per domain bounded
     include_certificate_export: bool = True
     include_report_download: bool = True
-    dns_resolvers: list[str] | None = None
+    # SECURITY TARGET: Removed dns_resolvers to prevent SSRF
 
 
 class FleetScanStatus(BaseModel):
