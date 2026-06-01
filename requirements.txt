@@ -12,3 +12,5 @@ supabase
 reportlab
 celery
 beautifulsoup4
+PyJWT
+passlib[bcrypt]

@@ -289,6 +289,18 @@ const filterRowsByMode = (
 
 const rawFetch = window.fetch.bind(window);
 window.fetch = async (...args) => {
+  // SECURITY TARGET: Inject API Key and JWT into all outbound requests securely without dev-key fallback
+  const opts = args[1] || {};
+  const apiKey = window.localStorage.getItem("qh_api_key");
+  const jwtToken = window.localStorage.getItem("qh_jwt_token");
+  
+  const headers = { ...opts.headers };
+  if (apiKey) headers["X-API-Key"] = apiKey;
+  if (jwtToken) headers["Authorization"] = `Bearer ${jwtToken}`;
+  
+  opts.headers = headers;
+  args[1] = opts;
+  
   const response = await rawFetch(...args);
   if (response.status === 403) {
     const body = await response

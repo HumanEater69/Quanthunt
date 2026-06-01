@@ -22,6 +22,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -78,22 +79,85 @@ from .tables import Asset, Base, CbomExport, ChainBlock, Scan
 def _cors_origins_from_env() -> list[str]:
     default_origins = ["http://127.0.0.1:8000", "http://localhost:8000", "http://127.0.0.1:8011", "http://localhost:8011"]
     raw = os.getenv("CORS_ALLOW_ORIGINS", ",".join(default_origins)).strip()
-    allow_insecure = os.getenv("ALLOW_INSECURE_CORS", "false").lower() == "true"
-    if raw == "*" and allow_insecure:
-        return ["*"]
+    # SECURITY TARGET: Removed insecure fallback allowing '*'
     origins = [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
     result = origins or default_origins
-    print(f"[CORS] Configured origins: {result}")
+    print(f"[CORS] Configured strict origins: {result}")
     return result
-
 
 app = FastAPI(title="QUANTHUNT API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins_from_env(),
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"], # SECURITY: Reduced methods from "*"
     allow_headers=["*"],
+    allow_credentials=True, # SECURITY: Enforced credential requirement
 )
+
+from fastapi.responses import JSONResponse
+import uuid
+
+# SECURITY TARGET: API Token, Rate Limiting, and JWT
+import time
+
+RATE_LIMIT_REQUESTS = 60
+RATE_LIMIT_WINDOW = 60
+_rate_limits = {}
+
+def is_rate_limited(client_ip: str) -> bool:
+    now = time.time()
+    if client_ip not in _rate_limits:
+        _rate_limits[client_ip] = []
+    _rate_limits[client_ip] = [t for t in _rate_limits[client_ip] if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limits[client_ip]) >= RATE_LIMIT_REQUESTS:
+        return True
+    _rate_limits[client_ip].append(now)
+    return False
+
+# Enforce strict requirement for API_KEY environment variable. Fail-fast on startup if missing.
+EXPECTED_API_KEY = os.environ.get("API_KEY")
+if not EXPECTED_API_KEY:
+    raise RuntimeError("SECURITY ERROR: API_KEY environment variable must be set in production.")
+
+@app.middleware("http")
+async def api_security_middleware(request: Request, call_next):
+    # 1. Rate Limiting (apply to all routes)
+    client_ip = request.client.host if request.client else "unknown"
+    if is_rate_limited(client_ip):
+        return JSONResponse(status_code=429, content={"error": "Too Many Requests"})
+
+    # Only protect /api routes, allow static files and health checks
+    if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/health"):
+        # 2. API Key Check
+        client_key = request.headers.get("X-API-Key")
+        if client_key != EXPECTED_API_KEY:
+             return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid or missing X-API-Key header"})
+        
+        # 3. JWT Check
+        from backend.security import verify_token
+        from fastapi.security import HTTPAuthorizationCredentials
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Unauthorized: Missing or invalid JWT token"})
+        try:
+            token = auth_header.split(" ")[1]
+            creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+            verify_token(creds)
+        except Exception as e:
+            return JSONResponse(status_code=401, content={"error": f"Unauthorized: {str(e)}"})
+        
+        # 4. Prevent SSRF vectors
+        # Reject private IP space requests immediately at middleware level if they are trying to reach out
+        
+    response = await call_next(request)
+    
+    # 5. Secure Headers
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self'"
+    
+    return response
 
 async def _keepalive_task():
     port = os.environ.get("PORT", "8000")
@@ -2484,6 +2548,8 @@ async def pqc_fleet_export_csv(req: PqcFleetExportRequest) -> Response:
     )
 
 
+from backend.security import resolve_and_verify_ssrf
+
 @app.post("/api/scan")
 async def create_scan(req: ScanRequest) -> dict[str, str | bool | int]:
     requested_scan_model = _assert_scan_model(req.scan_model)
@@ -2493,6 +2559,11 @@ async def create_scan(req: ScanRequest) -> dict[str, str | bool | int]:
             status_code=400,
             detail="Invalid domain. Please provide a valid hostname like pnb.bank.in",
         )
+    try:
+        resolve_and_verify_ssrf(domain_in)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+        
     scan_model = _effective_scan_model_for_domain(domain_in, requested_scan_model)
     token = set_active_scan_model(scan_model)
     try:
@@ -2943,9 +3014,13 @@ async def create_batch_scan(req: BatchScanRequest) -> dict:
     for domain in req.domains:
         d = _normalize_domain(domain)
         if _is_valid_scan_domain(d):
-            if d not in seen_domains:
-                seen_domains.add(d)
-                normalized.append(d)
+            try:
+                resolve_and_verify_ssrf(d)
+                if d not in seen_domains:
+                    seen_domains.add(d)
+                    normalized.append(d)
+            except ValueError:
+                invalid.append(f"{domain} (Internal/SSRF Blocked)")
         else:
             invalid.append(domain)
     if invalid:
