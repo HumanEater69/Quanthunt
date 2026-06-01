@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: quanthunt-api
+    name: quanthunt
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt

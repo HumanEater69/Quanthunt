@@ -156,7 +156,7 @@ def decision_tree_label(
     tls: TLSInfo,
     key_exchange_status: str,
 ) -> str:
-    trained_posture = classify_trained_posture(tls.host, tls.model_dump())
+    trained_posture = classify_trained_posture(tls.host, vars(tls) if hasattr(tls, '__dict__') else dict(tls))
     if trained_posture == "pass":
         return "Quantum-Safe (NIST Compliant)"
     if trained_posture == "hybrid":

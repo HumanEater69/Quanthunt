@@ -291,10 +291,14 @@ const rawFetch = window.fetch.bind(window);
 window.fetch = async (...args) => {
   // SECURITY TARGET: Inject API Key and JWT into all outbound requests securely without dev-key fallback
   const opts = args[1] || {};
-  const apiKey = window.localStorage.getItem("qh_api_key");
-  const jwtToken = window.localStorage.getItem("qh_jwt_token");
+  let apiKey = null;
+  let jwtToken = null;
+  try {
+    apiKey = window.localStorage.getItem("qh_api_key");
+    jwtToken = window.localStorage.getItem("qh_jwt_token");
+  } catch(e) {}
   
-  const headers = { ...opts.headers };
+  const headers = opts.headers ? { ...opts.headers } : {};
   if (apiKey) headers["X-API-Key"] = apiKey;
   if (jwtToken) headers["Authorization"] = `Bearer ${jwtToken}`;
   
