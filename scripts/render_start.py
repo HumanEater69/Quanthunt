@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 
 def main() -> None:
-    port = int(os.getenv("PORT", "10000"))
+    port = int(os.getenv("PORT", "8000"))
     uvicorn.run("backend.main:app", host="0.0.0.0", port=port)
 
 

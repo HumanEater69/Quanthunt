@@ -276,11 +276,13 @@ def build_cbom(domain: str, findings: list[AssetFinding]) -> dict[str, Any]:
                     {"name": "pqc-claim-mismatch", "value": str(pqc_claim_mismatch).lower()},
                     {"name": "agent-required", "value": "false"},
                     {"name": "nist-pqc-ref", "value": "FIPS 203 (ML-KEM), FIPS 204 (ML-DSA), FIPS 205 (SLH-DSA)"},
+                    {"name": "cnsa-2-0-status", "value": "COMPLIANT" if fips203_effective and fips204 else ("PARTIAL" if fips203_effective else "NON_COMPLIANT")},
                     {"name": "label", "value": pqc_label},
                     {"name": "hndl-label", "value": hndl_label},
                 ],
             }
         )
+
 
     return {
         "bomFormat": "CycloneDX",

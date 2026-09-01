@@ -4,8 +4,8 @@ import asyncio
 import unittest
 from unittest import mock
 
-from quanthunt.discover import pqc_probe
-from quanthunt.models import PQCStatus
+from backend.scanner import pqc_probe
+from backend.models import PQCStatus
 
 
 class PQCProbeTests(unittest.IsolatedAsyncioTestCase):

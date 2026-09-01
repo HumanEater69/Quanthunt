@@ -1,4 +1,4 @@
-﻿
+
 import os
 
 code = """from __future__ import annotations

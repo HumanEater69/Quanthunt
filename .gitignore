@@ -17,3 +17,12 @@ dist/
 .vscode/extensions/
 .sixth/
 quantumshield_*.db*
+.venv*/
+*.zip
+*.log
+frontend_old/
+analyze_main.py
+parse_routes.py
+refactor_backend.py
+bandit_report.txt
+

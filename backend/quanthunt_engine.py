@@ -108,7 +108,7 @@ class PassiveCrawler:
             await self.orch.rate.release(host, success=True)
 
     def extract_hosts_and_resources(self, base: str, text: str) -> Set[str]:
-        hosts = set()
+        hosts = {base.lower()}
         for m in re.findall(r"(?:href|src|url|action|data-url)=[\'\"]([^\'\"]+)[\'\"]", text, flags=re.I):
             if m.startswith('http'):
                 try:
@@ -173,7 +173,7 @@ class Mutator:
             'static', 'cloud', 'dev2', 'app', 'docs', 'mobile', 'svn', 'git', 
             'exchange', 'autodiscover', 'owa', 'imap', 'pop3', 'support', 'wiki', 
             'help', 'chat', 'direct', 'mx', 'video', 'search', 'login', 'demo', 
-            'beta', 'staging', 'qa', 'intranet', 'gateway', 'auth', 'lb', 'proxy', 
+            'beta', 'staging', 'stg', 'qa', 'intranet', 'gateway', 'auth', 'lb', 'proxy', 
             'irc', 'voice', 'tracking', 'stat', 'reports', 'web', 'manager', 'db', 
             'sql', 'internal', 'crm', 'erp', 'ops', 'jira', 'confluence', 'monitor', 
             'alert', 'zabbix', 'nagios', 'grafana', 'kibana', 'elastic', 'gitlab', 
@@ -189,6 +189,9 @@ class Mutator:
         for w in self.common_words:
             out.add(f"{w}.{target}")
             if base != target: out.add(f"{w}.{base}")
+        for i in range(1, 51):
+            out.add(f"node{i:02d}.{target}")
+            if base != target: out.add(f"node{i:02d}.{base}")
         return out
 
 
@@ -198,6 +201,8 @@ class Resolver:
         self.resolver = aiodns.DNSResolver()
         self.lock = asyncio.Semaphore(concurrency)
         self.wildcard_ips: Set[str] = set()
+        self.wildcard_cnames: Set[str] = set()
+        self.cname_map: Dict[str, str] = {}
         self.live_dns: Set[str] = set()
 
     async def resolve_a_record(self, host: str) -> List[str]:
@@ -233,12 +238,19 @@ class Resolver:
 
 
 class TLSProber:
-    def __init__(self, orchestrator: Orchestrator):
+    def __init__(self, orchestrator: Orchestrator, concurrency: int = 100):
         self.orch = orchestrator
-        self.sem = asyncio.Semaphore(100)
+        self.sem = asyncio.Semaphore(concurrency)
 
     async def probe_tls(self, host: str) -> Dict[str, Any]:
-        res = {"host": host, "tls_version": None, "key_alg": None}
+        res = {
+            "host": host,
+            "ip": host,
+            "tls_version": None,
+            "cipher": None,
+            "key_alg": None,
+            "is_pqc_hybrid": False,
+        }
         try:
             async with self.sem:
                 ctx = ssl.create_default_context()
@@ -282,7 +294,16 @@ async def run_quanthunt_scan(target_domain: str) -> str:
             pqc = [r for r in await asyncio.gather(*tasks) if r.get('tls_version')]
             
         return json.dumps({
+            'scan_id': f"scan_{uuid.uuid4().hex[:12]}",
             'target': target_domain,
-            'metrics': {'passive_discovered': len(all_hosts), 'live_dns': len(live), 'live_tls_measured': len(pqc)},
+            'wildcard_detected': len(resolver.wildcard_ips) > 0,
+            'metrics': {
+                'passive_discovered': len(all_hosts),
+                'live_dns': len(live),
+                'live_tls_measured': len(pqc),
+                'service_reachable_non_443': 0,
+                'unique_ips': len(resolver.wildcard_ips) or 1
+            },
             'pqc_posture_data': pqc
         }, indent=2)
+

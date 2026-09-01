@@ -1,3 +1,4 @@
+import sys
 import unittest
 import json
 from pathlib import Path
@@ -10,7 +11,8 @@ class OfflineKBExpansionTests(unittest.TestCase):
         kb_gen_path = Path("backend/kb_generator.py")
         if kb_gen_path.exists():
             import subprocess
-            subprocess.run(["python", str(kb_gen_path)], check=True)
+            subprocess.run([sys.executable, str(kb_gen_path)], check=True)
+
 
     def test_who_am_i_fused(self):
         reply, intent = _offline_chain_reply("who am i")

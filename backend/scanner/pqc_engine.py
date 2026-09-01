@@ -297,6 +297,14 @@ def hndl_score(
         {"SAFE": 0.0, "ACCEPTABLE": 20.0, "WARNING": 60.0, "CRITICAL": 90.0},
         65.0,
     )
+    if cert_public_key_bits:
+        if cert_public_key_bits < 2048:
+            cert_algo_score += 20.0
+        elif cert_public_key_bits < 3072:
+            cert_algo_score += 5.0
+        elif cert_public_key_bits >= 4096:
+            cert_algo_score -= 5.0
+
     
     # 5% symmetric cipher risk.
     sym_score = _status_score(

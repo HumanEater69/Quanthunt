@@ -56,7 +56,9 @@ from .pqc_engine import (
     recommendations_for_status,
 )
 from .pqc_probe import probe_pqc
+from .qramm_tools_engine import CNSA2TimelineAnalyzer, PqcAlgorithmRecommender, CryptoDepsScanner
 from .tls_inspector import inspect_tls_async, probe_service_ports_async
+
 
 
 def _railway_hosted_mode() -> bool:
@@ -820,6 +822,19 @@ async def run_scan_pipeline(
             unknown_bucket = "none" if tls_measured else _tls_failure_bucket(tls.network_status or tls.scan_error)
             if not tls_measured:
                 unknown_buckets[unknown_bucket] += 1
+
+            # QRAMM Algorithm Integration
+            cnsa2_eval = CNSA2TimelineAnalyzer.analyze(
+                tls_version=tls.tls_version or "TLSv1.2",
+                cipher=tls.cipher_suite or "",
+                key_exchange=tls.key_exchange_algorithm or tls.key_exchange_group or "",
+                cert_signature_algo=tls.cert_sig_algo or "",
+                key_size=tls.cert_public_key_bits or 2048,
+            )
+            qramm_rec = PqcAlgorithmRecommender.recommend(
+                sector="financial" if model == "banking" else "general_enterprise"
+            )
+
             metadata = {
                 "tls": tls.model_dump(),
                 "api": api.model_dump(),
@@ -829,6 +844,8 @@ async def run_scan_pipeline(
                 "tls_unknown_reason": unknown_bucket,
                 "service_probe_ports": service_probes,
                 "service_reachable_non_443": service_reachable_non_443,
+                "qramm_cnsa2_timeline": cnsa2_eval,
+                "qramm_pqc_recommendations": qramm_rec,
                 "pqc": pqc_result.model_dump() if hasattr(pqc_result, "model_dump") else pqc_result,
                 "pqc_status": getattr(getattr(pqc_result, "status", None), "value", None) or getattr(pqc_result, "status", None),
                 "pqc_negotiated_group": getattr(pqc_result, "negotiated_group", None),
@@ -840,6 +857,7 @@ async def run_scan_pipeline(
                 "pqc_detection_method": getattr(pqc_result, "detection_method", None),
                 "pqc_error": getattr(pqc_result, "error", None),
             }
+
             with get_session() as session:
                 row = create_asset(
                     session=session,

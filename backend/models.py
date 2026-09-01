@@ -17,7 +17,7 @@ class ScanRequest(BaseModel):
     # SECURITY TARGET: Removed dns_resolvers and DoH endpoints from client payloads to prevent SSRF/DNS rebinding.
 
 class BatchScanRequest(BaseModel):
-    domains: list[str] = Field(..., max_items=100) # Ensure bounded list
+    domains: list[str] = Field(..., max_length=100) # Ensure bounded list
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
     # SECURITY TARGET: Removed user-controlled resolvers
@@ -156,7 +156,7 @@ class ScanState(BaseModel):
 
 class FleetScanBatchRequest(BaseModel):
     """Batch request to scan multiple domains concurrently with fleet settings."""
-    domains: list[str] = Field(..., max_items=100) # DoS protection wrapper
+    domains: list[str] = Field(..., max_length=100) # DoS protection wrapper
     deep_scan: bool = True
     scan_model: Literal["general", "banking"] = "general"
     concurrent_scans: int = Field(5, le=20) # Cap parallel scans to prevent exhaustion
