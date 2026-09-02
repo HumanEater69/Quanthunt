@@ -199,18 +199,25 @@ def build_scan_pdf(scan: dict) -> bytes:
     buf.seek(0)
     return buf.read()
 
-def readiness_label(avg_risk: float) -> str:
-    return label_for_score(avg_risk)
+def readiness_label(avg_risk: float, scan: dict | None = None) -> str:
+    has_pqc = False
+    if scan:
+        hybrid_count, _ = hybrid_pqc_summary(scan)
+        findings = scan.get("findings", []) or []
+        has_pqc = hybrid_count > 0 or any(
+            f.get("hybrid_pqc") or str(f.get("key_exchange_status") or "").upper() in ("SAFE", "ACCEPTABLE")
+            for f in findings
+        )
+    return label_for_score(avg_risk, has_pqc_signal=has_pqc)
 
 
 def certificate_readiness_label(scan: dict, avg_risk: float, eligible: bool = True) -> str:
     if not eligible:
         return "FAILED"
-    label = readiness_label(avg_risk)
     hybrid_count, _ = hybrid_pqc_summary(scan)
-    # Preserve hybrid certificate semantics when hybrid PQC was actually observed.
     if hybrid_count > 0:
         return "Quantum-Resilient (Hybrid)"
+    label = readiness_label(avg_risk, scan)
     return label
 
 def _draw_optional_image(c: canvas.Canvas, env_var: str, x: float, y: float, width: float, height: float) -> bool:

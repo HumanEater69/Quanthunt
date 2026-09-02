@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+import ReactDOM, { createPortal } from 'react-dom';
 import * as Recharts from 'recharts';
 import './styles.css';
 
@@ -7,70 +7,374 @@ window.React = React;
 window.ReactDOM = ReactDOM;
 window.Recharts = Recharts;
 
-// Gold, fluid skeuomorphic scanning animation overlay
+// Minimalist, Executive Liquid Glass Scanning Animation Overlay (Supports Dark & Light Theme)
 function GoldScanAnimation({ active = false, progress = 0, domain = "", scanModel = "general" }) {
   if (!active) return null;
-  return (
+
+  const dark = typeof isDarkTheme === 'function' ? isDarkTheme() : true;
+  const rawPct = Number(progress || 0);
+  const pct = Math.max(1, Math.min(100, Number.isFinite(rawPct) ? rawPct : 1));
+
+  const stageLabel =
+    pct < 20
+      ? "OSINT & ASSET DISCOVERY"
+      : pct < 45
+        ? "TLS & HANDSHAKE PROBES"
+        : pct < 72
+          ? "PQC CLASSIFICATION & RISK SCORING"
+          : pct < 90
+            ? "CYCLONEDX 1.6 CBOM EXPORT"
+            : "FINALIZING PQC CERTIFICATE";
+
+  // Theme-aware executive design tokens
+  const theme = dark
+    ? {
+        bg: "radial-gradient(ellipse at 50% 40%, rgba(12, 16, 22, 0.88), rgba(4, 6, 9, 0.96))",
+        blur: "blur(24px) saturate(1.4)",
+        cardBg: "linear-gradient(160deg, rgba(22, 28, 36, 0.76), rgba(12, 16, 22, 0.84))",
+        cardBorder: "1px solid rgba(212, 175, 55, 0.28)",
+        cardShadow: "0 30px 70px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.15)",
+        textPrimary: "#F4F6F8",
+        textMuted: "#9CA3AF",
+        goldAccent: "#E6C97A",
+        goldBright: "#F5D061",
+        pillBg: "rgba(212, 175, 55, 0.12)",
+        pillBorder: "1px solid rgba(212, 175, 55, 0.3)",
+        pillText: "#E6C97A",
+        trackStroke: "rgba(212, 175, 55, 0.15)",
+        progressBg: "rgba(255, 255, 255, 0.08)",
+        subText: "#8E98A8",
+        orbGlow1: "rgba(212, 175, 55, 0.14)",
+        orbGlow2: "rgba(180, 140, 40, 0.08)",
+        laserBeam:
+          "linear-gradient(90deg, transparent 0%, rgba(230, 201, 122, 0.3) 20%, rgba(245, 208, 97, 0.85) 50%, rgba(230, 201, 122, 0.3) 80%, transparent 100%)",
+      }
+    : {
+        bg: "radial-gradient(ellipse at 50% 40%, rgba(246, 244, 238, 0.90), rgba(235, 232, 222, 0.97))",
+        blur: "blur(24px) saturate(1.3)",
+        cardBg: "linear-gradient(160deg, rgba(255, 255, 255, 0.88), rgba(248, 245, 236, 0.84))",
+        cardBorder: "1px solid rgba(212, 175, 55, 0.35)",
+        cardShadow:
+          "0 20px 50px rgba(0, 0, 0, 0.08), 0 4px 20px rgba(212, 175, 55, 0.12), inset 0 1px 2px rgba(255, 255, 255, 0.95)",
+        textPrimary: "#1E242B",
+        textMuted: "#6B7280",
+        goldAccent: "#B8860B",
+        goldBright: "#D4AF37",
+        pillBg: "rgba(212, 175, 55, 0.14)",
+        pillBorder: "1px solid rgba(212, 175, 55, 0.4)",
+        pillText: "#9E7B1C",
+        trackStroke: "rgba(212, 175, 55, 0.22)",
+        progressBg: "rgba(0, 0, 0, 0.06)",
+        subText: "#64748B",
+        orbGlow1: "rgba(212, 175, 55, 0.18)",
+        orbGlow2: "rgba(230, 190, 70, 0.10)",
+        laserBeam:
+          "linear-gradient(90deg, transparent 0%, rgba(184, 134, 11, 0.25) 20%, rgba(212, 175, 55, 0.75) 50%, rgba(184, 134, 11, 0.25) 80%, transparent 100%)",
+      };
+
+  const content = (
     <div
+      className="qh-gold-overlay-container"
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 999999,
+        zIndex: 9999999,
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "radial-gradient(circle at 50% 40%, rgba(14, 26, 20, 0.92), rgba(6, 12, 9, 0.97))",
-        backdropFilter: "blur(20px) saturate(1.4)",
-        WebkitBackdropFilter: "blur(20px) saturate(1.4)",
-        transition: "all 0.4s cubic-bezier(0.4,0,0.2,1)",
-        color: "#ffe08a",
+        background: theme.bg,
+        backdropFilter: theme.blur,
+        WebkitBackdropFilter: theme.blur,
         padding: 24,
+        overflow: "hidden",
+        pointerEvents: "auto",
+        transition: "all 0.3s ease",
       }}
     >
-      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {/* Pulsing Outer Quantum Ring */}
-        <svg width="320" height="320" viewBox="0 0 260 260" style={{ filter: "drop-shadow(0 0 40px rgba(229, 204, 143, 0.5))" }}>
-          <defs>
-            <radialGradient id="goldFluid" cx="50%" cy="50%" r="80%">
-              <stop offset="0%" stopColor="#fffbe6" />
-              <stop offset="60%" stopColor="#ffe08a" />
-              <stop offset="100%" stopColor="#b08a3b" />
-            </radialGradient>
-            <linearGradient id="goldShine" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#fffbe6" stopOpacity="0.8" />
-              <stop offset="100%" stopColor="#ffe08a" stopOpacity="0.2" />
-            </linearGradient>
-          </defs>
-          <ellipse cx="130" cy="130" rx="100" ry="100" fill="url(#goldFluid)" opacity="0.85">
-            <animate attributeName="rx" values="100;108;100;92;100" dur="2.2s" repeatCount="indefinite" />
-            <animate attributeName="ry" values="100;92;100;108;100" dur="2.2s" repeatCount="indefinite" />
-          </ellipse>
-          <ellipse cx="130" cy="110" rx="65" ry="20" fill="url(#goldShine)">
-            <animateTransform attributeName="transform" type="rotate" from="0 130 130" to="360 130 130" dur="2.5s" repeatCount="indefinite" />
-          </ellipse>
-          <circle cx="130" cy="130" r="108" fill="none" stroke="#ffe08a" strokeWidth="6" strokeDasharray={2 * Math.PI * 108} strokeDashoffset={2 * Math.PI * 108 * (1 - Math.max(5, progress) / 100)} style={{ transition: "stroke-dashoffset 0.4s ease" }} opacity="0.95" />
-          <text x="130" y="142" textAnchor="middle" fontFamily="Orbitron, sans-serif" fontWeight="900" fontSize="42" fill="#122018" style={{ filter: "drop-shadow(0 2px 10px #fffbe6)" }}>
-            {Math.round(progress)}%
-          </text>
-        </svg>
+      {/* Subtle Minimal Background Ambient Light */}
+      <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+        <div
+          style={{
+            position: "absolute",
+            width: 500,
+            height: 500,
+            borderRadius: "50%",
+            top: "-10%",
+            left: "20%",
+            background: `radial-gradient(circle, ${theme.orbGlow1} 0%, transparent 70%)`,
+            filter: "blur(60px)",
+            animation: "qhGoldOrbFloat1 14s ease-in-out infinite alternate",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 450,
+            height: 450,
+            borderRadius: "50%",
+            bottom: "-10%",
+            right: "20%",
+            background: `radial-gradient(circle, ${theme.orbGlow2} 0%, transparent 70%)`,
+            filter: "blur(50px)",
+            animation: "qhGoldOrbFloat2 12s ease-in-out infinite alternate",
+          }}
+        />
+        {/* Minimal Scanning Laser Sweep */}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            height: "2px",
+            background: theme.laserBeam,
+            boxShadow: `0 0 15px 4px ${theme.orbGlow1}`,
+            animation: "qhGoldLaserSweep 3.6s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+            zIndex: 2,
+          }}
+        />
       </div>
 
-      <div style={{ marginTop: 28, textAlign: "center", display: "grid", gap: 10, maxWidth: 580 }}>
-        <div style={{ fontFamily: "Orbitron, sans-serif", fontWeight: 800, fontSize: 22, color: "#f5e6be", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          DEEP QUANTUM DISCOVERY IN PROGRESS
+      {/* Main Sleek Frosted Glass Executive Card */}
+      <div
+        className="qh-gold-minimal-card"
+        style={{
+          position: "relative",
+          zIndex: 10,
+          width: "min(520px, 90vw)",
+          borderRadius: 20,
+          padding: "32px 28px",
+          background: theme.cardBg,
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          border: theme.cardBorder,
+          boxShadow: theme.cardShadow,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          textAlign: "center",
+          transition: "all 0.3s ease",
+        }}
+      >
+        {/* Sleek Specular Sheen Reflection Layer */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 20,
+            pointerEvents: "none",
+            background: "linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, transparent 40%)",
+          }}
+        />
+
+        {/* Minimalist Double-Ring SVG Gauge */}
+        <div style={{ position: "relative", width: 140, height: 140, margin: "6px 0 18px" }}>
+          <svg width="140" height="140" viewBox="0 0 140 140" style={{ overflow: "visible" }}>
+            <defs>
+              <linearGradient id="qhMinimalGoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#F5D061" />
+                <stop offset="50%" stopColor="#D4AF37" />
+                <stop offset="100%" stopColor="#B8860B" />
+              </linearGradient>
+            </defs>
+
+            {/* Outer Subtle Rotating Dashed Ring */}
+            <circle
+              cx="70"
+              cy="70"
+              r="64"
+              fill="none"
+              stroke={theme.trackStroke}
+              strokeWidth="1.5"
+              strokeDasharray="6 6"
+              style={{
+                transformOrigin: "70px 70px",
+                animation: "qhSpinRingMinimal 14s linear infinite",
+              }}
+            />
+
+            {/* Inner Background Track */}
+            <circle
+              cx="70"
+              cy="70"
+              r="54"
+              fill="none"
+              stroke={theme.trackStroke}
+              strokeWidth="3.5"
+            />
+
+            {/* Progress Arc */}
+            <circle
+              cx="70"
+              cy="70"
+              r="54"
+              fill="none"
+              stroke="url(#qhMinimalGoldGrad)"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeDasharray={2 * Math.PI * 54}
+              strokeDashoffset={2 * Math.PI * 54 * (1 - pct / 100)}
+              style={{
+                transformOrigin: "70px 70px",
+                transform: "rotate(-90deg)",
+                transition: "stroke-dashoffset 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                filter: "drop-shadow(0 0 6px rgba(212, 175, 55, 0.4))",
+              }}
+            />
+
+            {/* Percentage Text */}
+            <text
+              x="70"
+              y="68"
+              textAnchor="middle"
+              fontFamily="Inter, system-ui, -apple-system, sans-serif"
+              fontWeight="700"
+              fontSize="28"
+              fill={theme.textPrimary}
+              style={{ letterSpacing: "-0.02em" }}
+            >
+              {Math.round(pct)}%
+            </text>
+
+            <text
+              x="70"
+              y="86"
+              textAnchor="middle"
+              fontFamily="JetBrains Mono, monospace"
+              fontWeight="600"
+              fontSize="9"
+              fill={theme.goldAccent}
+              style={{ letterSpacing: "0.15em", textTransform: "uppercase" }}
+            >
+              SCANNING
+            </text>
+          </svg>
         </div>
-        {domain && (
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, color: "#7cc49a", background: "rgba(124, 196, 154, 0.12)", border: "1px solid rgba(124, 196, 154, 0.3)", borderRadius: 999, padding: "6px 20px", margin: "0 auto" }}>
-            Target: <strong style={{ color: "#fffbe6" }}>{domain}</strong> ({scanModel.toUpperCase()} PROFILE)
+
+        {/* Minimalist Text & Info */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+          <div
+            style={{
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontWeight: 700,
+              fontSize: 15,
+              color: theme.textPrimary,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            QUANTUM DISCOVERY SCANNING
           </div>
-        )}
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, color: "#d9c178", opacity: 0.88, lineHeight: 1.6 }}>
-          Executing OSINT asset discovery, TLS handshakes, CNSA 2.0 timeline mapping & PQC benchmarks...
+
+          {/* Minimal Target Pill */}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              alignSelf: "center",
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: 12,
+              fontWeight: 500,
+              color: theme.pillText,
+              background: theme.pillBg,
+              border: theme.pillBorder,
+              borderRadius: 999,
+              padding: "4px 16px",
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: theme.goldBright,
+                display: "inline-block",
+              }}
+            />
+            <span>{domain || "Target Domain"}</span>
+            <span style={{ opacity: 0.4 }}>|</span>
+            <span style={{ textTransform: "uppercase" }}>{scanModel}</span>
+          </div>
+
+          {/* Animated Stage Subtitle */}
+          <div
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: 11.5,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              color: theme.goldAccent,
+              marginTop: 2,
+            }}
+          >
+            {stageLabel}
+          </div>
+
+          {/* Sleek Liquid Gold Progress Line */}
+          <div
+            style={{
+              width: "100%",
+              height: 4,
+              borderRadius: 999,
+              background: theme.progressBg,
+              overflow: "hidden",
+              position: "relative",
+              marginTop: 6,
+            }}
+          >
+            <div
+              style={{
+                width: `${pct}%`,
+                height: "100%",
+                borderRadius: 999,
+                background: "linear-gradient(90deg, #D4AF37 0%, #F5D061 100%)",
+                boxShadow: "0 0 8px rgba(212, 175, 55, 0.6)",
+                transition: "width 0.4s ease",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: 10.5,
+              color: theme.subText,
+              marginTop: 4,
+            }}
+          >
+            Performing OSINT discovery, TLS handshakes & PQC readiness scoring...
+          </div>
         </div>
       </div>
+
+      {/* Global CSS Keyframes */}
+      <style>{`
+        @keyframes qhGoldOrbFloat1 {
+          0% { transform: translate(0, 0); }
+          100% { transform: translate(30px, 20px); }
+        }
+        @keyframes qhGoldOrbFloat2 {
+          0% { transform: translate(0, 0); }
+          100% { transform: translate(-25px, -18px); }
+        }
+        @keyframes qhGoldLaserSweep {
+          0% { top: -5%; opacity: 0; }
+          12% { opacity: 1; }
+          88% { opacity: 1; }
+          100% { top: 105%; opacity: 0; }
+        }
+        @keyframes qhSpinRingMinimal {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
+
+  return typeof document !== "undefined" && document.body
+    ? createPortal(content, document.body)
+    : content;
 }
 
 
@@ -2346,6 +2650,7 @@ function ClayMetric({ label, value, tone = C.blue, size = 18, style = {} }) {
 function Card({ children, style = {}, className = "" }) {
   const [hover, setHover] = useState(false);
   const dark = isDarkTheme();
+  const isVisibleOverflow = style.overflow === "visible";
   return (
     <div
       className={`qh-universal-card ${className}`.trim()}
@@ -2353,8 +2658,8 @@ function Card({ children, style = {}, className = "" }) {
       onMouseLeave={() => setHover(false)}
       style={{
         position: "relative",
-        zIndex: hover ? 40 : 1,
-        overflow: "hidden",
+        zIndex: hover ? 100 : isVisibleOverflow ? (style.zIndex || 50) : (style.zIndex || 1),
+        overflow: style.overflow !== undefined ? style.overflow : "hidden",
         background: dark
           ? "linear-gradient(160deg, #15243f 0%, #111d34 100%)"
           : "linear-gradient(160deg, #ebeff4 0%, #e1e6ed 100%)",
@@ -2475,7 +2780,7 @@ function LiquidSearchSelect({
       style={{
         position: "relative",
         minWidth,
-        zIndex: open ? 180 : "auto",
+        zIndex: open ? 999999 : 10,
       }}
     >
       <button
@@ -2519,7 +2824,7 @@ function LiquidSearchSelect({
             top: "calc(100% + 6px)",
             left: 0,
             right: 0,
-            zIndex: 220,
+            zIndex: 9999999,
             borderRadius: 12,
             border: dark
               ? "1px solid rgba(121,189,159,0.42)"
@@ -3251,11 +3556,41 @@ function ScannerTab({
       [POSTURE_LABELS.safe]: 0,
     })[normalizePostureLabel(status)] ?? 60;
 
-  const boardroomStateFromScore = (score) => {
-    const risk = Number(score);
-    if (!Number.isFinite(risk)) return "hybrid";
-    if (risk <= 60) return "pass";
-    if (risk <= 80) return "hybrid";
+  const boardroomStateFromScore = (score, customScanData) => {
+    const dataObj = customScanData || scanData;
+    const findings = dataObj?.findings || [];
+    const assets = dataObj?.assets || [];
+
+    const hasPurePqcSignal =
+      findings.some(
+        (f) =>
+          String(f?.key_exchange_status || "").toUpperCase() === "SAFE" ||
+          String(f?.label || "").toLowerCase().includes("quantum-safe") ||
+          String(f?.label || "").toLowerCase().includes("nist compliant"),
+      ) ||
+      assets.some(
+        (a) =>
+          String(a?.label || "").toLowerCase().includes("quantum-safe") ||
+          String(a?.label || "").toLowerCase().includes("nist compliant"),
+      );
+
+    const hasHybridSignal =
+      findings.some(
+        (f) =>
+          f?.hybrid_pqc ||
+          String(f?.key_exchange_status || "").toUpperCase() === "ACCEPTABLE" ||
+          String(f?.label || "").toLowerCase().includes("hybrid") ||
+          String(f?.label || "").toLowerCase().includes("resilient"),
+      ) ||
+      assets.some(
+        (a) =>
+          String(a?.label || "").toLowerCase().includes("hybrid") ||
+          String(a?.label || "").toLowerCase().includes("resilient"),
+      );
+
+    if (hasPurePqcSignal) return "pass";
+    if (hasHybridSignal) return "hybrid";
+    // Without verified PQC or hybrid PQC, classical-only domains (e.g. legacy banks) fail quantum readiness!
     return "fail";
   };
 
@@ -3913,7 +4248,10 @@ function ScannerTab({
         const certifiedState = certKind === "hybrid-pass" ? "hybrid" : "pass";
         setBoardroomView({
           state: certifiedState,
-          why: `Strict certification checks passed (Avg HNDL: ${status.avg_hndl_risk ?? "n/a"}).`,
+          why:
+            certifiedState === "hybrid"
+              ? `Strict PQC readiness verified: Domain deployed with Quantum-Resilient (Hybrid) cryptographic posture (Avg HNDL: ${status.avg_hndl_risk ?? "n/a"}).`
+              : `Strict certification checks passed (Avg HNDL: ${status.avg_hndl_risk ?? "n/a"}).`,
           actions,
         });
       } else if (status && !status.eligible) {
@@ -3935,14 +4273,14 @@ function ScannerTab({
             `${reasonText}`,
         });
       } else {
-        const inferredState = boardroomStateFromScore(nextFormula.total || 0);
+        const inferredState = boardroomStateFromScore(nextFormula.total || 0, scanData);
         setBoardroomView({
           state: inferredState,
           why:
             inferredState === "pass"
               ? "Observed posture indicates low risk in current scan evidence."
               : inferredState === "hybrid"
-                ? "Observed posture is in transition and needs targeted hardening."
+                ? "Observed posture is in transition (Quantum-Resilient Hybrid) and needs targeted hardening."
                 : "Observed posture still includes high crypto risk exposure.",
           actions,
         });
@@ -4358,16 +4696,16 @@ function ScannerTab({
             boardroomState === null
               ? "PENDING"
               : boardroomPass
-                ? "YES (PASS)"
+                ? "YES (NIST PQC SAFE)"
                 : boardroomHybrid
-                  ? "PARTIAL (HYBRID)"
+                  ? "YES (QUANTUM-RESILIENT HYBRID)"
                   : "NO (FAIL)";
 
           return (
         <div
           style={{
             marginBottom: 12,
-            border: `1px solid ${boardroomFailed ? C.red : C.border}`,
+            border: `1px solid ${boardroomFailed ? C.red : boardroomHybrid ? "#d4af37" : C.border}`,
             borderRadius: 14,
             padding: 12,
             background: panelBg,
@@ -4396,7 +4734,7 @@ function ScannerTab({
             }}
           >
             <div>
-              PQC executive state: {(boardroomState || "pending").toUpperCase()} |
+              PQC executive state: {(boardroomState === "hybrid" ? "QUANTUM-RESILIENT (HYBRID)" : boardroomState || "pending").toUpperCase()} |
               Readiness today: {readinessText}
             </div>
             <div>Why: {boardroomView.why}</div>
@@ -5648,7 +5986,7 @@ function AssetMapTab({ scanModel = "general" }) {
   );
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <Card style={{ padding: 18 }}>
+      <Card style={{ padding: 18, overflow: "visible" }}>
         <TabModeAccent scanModel={scanModel} tabLabel="DISCOVERED ASSET MAP" />
         <TabGuide
           title="This tab explains discovered infrastructure"
@@ -5766,6 +6104,7 @@ function CryptoTab({ scanModel = "general" }) {
         setScans(uniqueCompletedScansByDomain(filterRowsByMode(d, scanModel))),
       );
   }, [scanModel]);
+
   const load = async (scanId) => {
     setSelectedScanId(scanId);
     const r = await fetch(`${API}/api/scan/${scanId}/findings`);
@@ -5813,6 +6152,17 @@ function CryptoTab({ scanModel = "general" }) {
       { axis: "Hash", value: 35 },
     ]);
   };
+
+  useEffect(() => {
+    if (!scans.length) return;
+    const selectedStillAvailable = selectedScanId
+      ? scans.some((s) => String(s.scan_id) === String(selectedScanId))
+      : false;
+    if (!selectedScanId || !selectedStillAvailable) {
+      load(scans[0].scan_id);
+    }
+  }, [scans, selectedScanId]);
+
   const domainOptions = useMemo(
     () =>
       (scans || []).map((s) => ({
@@ -5823,7 +6173,7 @@ function CryptoTab({ scanModel = "general" }) {
   );
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <Card style={{ padding: 18 }}>
+      <Card style={{ padding: 18, overflow: "visible" }}>
         <TabModeAccent
           scanModel={scanModel}
           tabLabel="CRYPTO POSTURE ANALYZER"
@@ -5919,30 +6269,38 @@ function CryptoTab({ scanModel = "general" }) {
             </tr>
           </thead>
           <tbody>
-            {findings.map((f) => (
-              <tr key={f.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-                <td style={{ padding: 10, color: C.dim }}>{f.category}</td>
-                <td style={{ padding: 10, color: C.text }}>
-                  {f.algorithm_name || f.algorithm}
-                </td>
-                <td style={{ padding: 10, color: C.text }}>
-                  {f.primitive || "-"}
-                </td>
-                <td style={{ padding: 10, color: C.dim }}>{f.oid || "-"}</td>
-                <td style={{ padding: 10, color: C.text }}>
-                  {f.classical_security_level || "-"}
-                </td>
-                <td style={{ padding: 10, color: C.text }}>
-                  {f.key_state || "-"}
-                </td>
-                <td style={{ padding: 10, color: C.dim }}>
-                  {f.cert_in_profile || "-"}
-                </td>
-                <td style={{ padding: 10 }}>
-                  <Badge status={f.status} />
+            {findings.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ padding: 24, textAlign: "center", color: C.dim }}>
+                  No cryptographic findings recorded for the selected domain.
                 </td>
               </tr>
-            ))}
+            ) : (
+              findings.map((f) => (
+                <tr key={f.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ padding: 10, color: C.dim }}>{f.category}</td>
+                  <td style={{ padding: 10, color: C.text }}>
+                    {f.algorithm_name || f.algorithm}
+                  </td>
+                  <td style={{ padding: 10, color: C.text }}>
+                    {f.primitive || "-"}
+                  </td>
+                  <td style={{ padding: 10, color: C.dim }}>{f.oid || "-"}</td>
+                  <td style={{ padding: 10, color: C.text }}>
+                    {f.classical_security_level || "-"}
+                  </td>
+                  <td style={{ padding: 10, color: C.text }}>
+                    {f.key_state || "-"}
+                  </td>
+                  <td style={{ padding: 10, color: C.dim }}>
+                    {f.cert_in_profile || "-"}
+                  </td>
+                  <td style={{ padding: 10 }}>
+                    <Badge status={f.status} />
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </Card>
@@ -6325,15 +6683,17 @@ function CBOMTab({ scanModel = "general" }) {
   );
   const executiveState = !cbomRows.length
     ? "hybrid"
-    : classicalOnlyCount > 0 || hasIncompleteRiskRows || avgHndlRisk > 80
-      ? "fail"
-      : avgHndlRisk <= 60 && pqcCapableCount > 0
+    : pqcCapableCount > 0 || hybridPqcCount > 0
+      ? classicalOnlyCount === 0 && avgHndlRisk <= 50
         ? "pass"
+        : "hybrid"
+      : classicalOnlyCount > 0 || hasIncompleteRiskRows || avgHndlRisk > 80
+        ? "fail"
         : "hybrid";
   const hybridLeadText =
     cbomRows.length > 0
-      ? hybridPqcCount > 0
-        ? `Hybrid PQC observed on ${hybridPqcCount}/${cbomRows.length} assets.`
+      ? hybridPqcCount > 0 || pqcCapableCount > 0
+        ? `Hybrid PQC observed on ${Math.max(hybridPqcCount, pqcCapableCount)}/${cbomRows.length} assets.`
         : "No hybrid PQC handshake signals observed yet."
       : "Hybrid PQC visibility will appear after a completed scan is selected.";
   const executiveReason =
@@ -6342,12 +6702,12 @@ function CBOMTab({ scanModel = "general" }) {
     (executiveState === "pass"
       ? "PQC-capable posture observed with low average risk."
       : executiveState === "hybrid"
-        ? "Transition posture detected: hardening required before pass-grade certification."
+        ? "Hybrid PQC transition active (X25519 + ML-KEM768): classical-only endpoints present during migration."
         : hasIncompleteRiskRows
           ? "Incomplete scan evidence exists; treat unresolved assets as high risk until handshake succeeds."
-        : classicalOnlyCount > 0
-          ? "Classical-only crypto posture remains present in observed assets."
-          : "Average HNDL risk is above fail threshold.");
+          : classicalOnlyCount > 0
+            ? "Classical-only crypto posture remains present in observed assets."
+            : "Average HNDL risk is above fail threshold.");
   const darkTheme = isDarkTheme();
   return (
     <div className={`cbom-tab ${darkTheme ? "cbom-tab-dark" : "cbom-tab-light"}`}>
@@ -6749,7 +7109,7 @@ function RoadmapTab({ scanModel = "general" }) {
 
   return (
     <div style={{ display: "grid", gap: 14 }}>
-      <Card style={{ padding: 16 }}>
+      <Card style={{ padding: 16, overflow: "visible" }}>
         <TabModeAccent scanModel={scanModel} tabLabel="REMEDIATION ROADMAP" />
         <TabGuide
           title="This tab turns findings into phased actions"
@@ -7763,7 +8123,7 @@ function LeaderboardTab({ scanModel = "general" }) {
         )}
       </Card>
 
-      <Card style={{ padding: 16 }}>
+      <Card style={{ padding: 16, overflow: "visible" }}>
         <div
           style={{
             display: "flex",
@@ -8024,7 +8384,7 @@ function BankSignalLabTab({ scanModel = "general" }) {
           ]}
         />
       </Card>
-      <Card style={{ padding: 16 }}>
+      <Card style={{ padding: 16, overflow: "visible" }}>
         <div
           style={{
             display: "flex",

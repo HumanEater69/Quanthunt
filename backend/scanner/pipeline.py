@@ -755,7 +755,17 @@ async def run_scan_pipeline(
             if idx == 1 or idx % log_every == 0 or idx == total:
                 _db_log(scan_id, f"[PQC] Probed {idx}/{total} assets", progress)
 
+        from ..models import PQCStatus
         for idx, (asset, tls, api, service_probes, pqc_result) in enumerate(all_results, start=1):
+            pqc_st = getattr(pqc_result, "status", None)
+            pqc_group = getattr(pqc_result, "negotiated_group", None)
+            if pqc_st in (PQCStatus.PASS, PQCStatus.HYBRID) or (pqc_group and any(x in str(pqc_group).upper() for x in ("MLKEM", "ML-KEM", "KYBER", "0X11EC", "0X6399", "0X11ED"))):
+                effective_group = pqc_group or "X25519MLKEM768"
+                tls.key_exchange_group = effective_group
+                if not isinstance(tls.cipher_components, dict):
+                    tls.cipher_components = {}
+                tls.cipher_components["pqc_signal"] = True
+                tls.cipher_components["key_exchange"] = f"HYBRID-PQC-CLASSICAL ({effective_group})"
 
             key_exchange_status = classify_key_exchange(
                 tls.cipher_suite,

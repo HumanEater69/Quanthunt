@@ -325,7 +325,9 @@ def hndl_score(
 
     return round(min(max(score, 0.0), 100.0), 2)
 
-def label_for_score(score: float, scan_model: str = "general") -> str:
+def label_for_score(score: float, scan_model: str = "general", has_pqc_signal: bool = False) -> str:
+    if not has_pqc_signal:
+        return "Quantum-Vulnerable (HNDL Risk)"
     model = (scan_model or "general").lower()
     safe_threshold = 50 if model == "banking" else 60
     ready_threshold = 70 if model == "banking" else 80

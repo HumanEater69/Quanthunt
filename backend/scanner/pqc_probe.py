@@ -301,6 +301,49 @@ async def _python_ssl_probe(hostname: str, port: int, timeout: int) -> tuple[str
             await writer.wait_closed()
 
 
+def _raw_tls_pqc_probe_sync(hostname: str, port: int = 443, timeout: int = 4) -> tuple[str | None, str | None]:
+    host_bytes = hostname.encode("utf-8")
+    sni_len = len(host_bytes)
+    ext_sni = b"\x00\x00" + (sni_len + 5).to_bytes(2, "big") + (sni_len + 3).to_bytes(2, "big") + b"\x00" + sni_len.to_bytes(2, "big") + host_bytes
+    groups = b"\x11\xec\x11\xed\x11\xeb\x63\x99\x00\x1d\x00\x17"
+    ext_groups = b"\x00\x0a" + (len(groups) + 2).to_bytes(2, "big") + len(groups).to_bytes(2, "big") + groups
+    sig_algos = b"\x04\x03\x08\x04\x04\x01\x05\x01\x02\x01"
+    ext_sig = b"\x00\x0d" + (len(sig_algos) + 2).to_bytes(2, "big") + len(sig_algos).to_bytes(2, "big") + sig_algos
+    ext_ver = b"\x00\x2b\x00\x03\x02\x03\x04"
+    dummy_x25519 = b"\x01" * 32
+    dummy_mlkem = b"\x02" * 1184
+    ks_11ec = b"\x11\xec\x04\xc0" + dummy_x25519 + dummy_mlkem
+    ks_001d = b"\x00\x1d\x00\x20" + dummy_x25519
+    ks_data = ks_11ec + ks_001d
+    ext_ks = b"\x00\x33" + (len(ks_data) + 2).to_bytes(2, "big") + len(ks_data).to_bytes(2, "big") + ks_data
+    extensions = ext_sni + ext_groups + ext_sig + ext_ver + ext_ks
+    sess_id = b"\xaa" * 32
+    ciphers = b"\x13\x02\x13\x01\x13\x03"
+    ch_body = b"\x03\x03" + b"\x00" * 32 + len(sess_id).to_bytes(1, "big") + sess_id + len(ciphers).to_bytes(2, "big") + ciphers + b"\x01\x00" + len(extensions).to_bytes(2, "big") + extensions
+    ch_msg = b"\x01" + len(ch_body).to_bytes(3, "big") + ch_body
+    record = b"\x16\x03\x01" + len(ch_msg).to_bytes(2, "big") + ch_msg
+    
+    try:
+        with socket.create_connection((hostname, port), timeout=timeout) as s:
+            s.sendall(record)
+            res = s.recv(4096)
+            if b"\x11\xec" in res:
+                return "X25519MLKEM768", None
+            if b"\x11\xed" in res:
+                return "SecP256r1MLKEM768", None
+            if b"\x11\xeb" in res:
+                return "MLKEM768", None
+            if b"\x63\x99" in res:
+                return "X25519Kyber768Draft00", None
+            return None, None
+    except Exception as exc:
+        return None, str(exc)
+
+
+async def _raw_tls_pqc_probe(hostname: str, port: int = 443, timeout: int = 4) -> tuple[str | None, str | None]:
+    return await asyncio.to_thread(_raw_tls_pqc_probe_sync, hostname, port, timeout)
+
+
 async def probe_pqc(
     hostname: str,
     port: int = 443,
@@ -320,6 +363,15 @@ async def probe_pqc(
         return result
 
     result.resolved_ip = await _resolve_hostname(host)
+
+    # 1. Try active raw TLS 1.3 PQC ClientHello probe first
+    raw_pqc_group, _raw_err = await _raw_tls_pqc_probe(host, port, min(4, timeout))
+    if raw_pqc_group:
+        result.status = PQCStatus.PASS
+        result.negotiated_group = raw_pqc_group
+        result.tls_version = "TLSv1.3"
+        result.detection_method = "active_raw_tls_handshake"
+        return result
 
     version = await _openssl_version(openssl_binary)
     use_openssl = version is not None and version >= (3, 4, 0)
