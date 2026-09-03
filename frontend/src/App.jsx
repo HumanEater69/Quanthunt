@@ -7019,6 +7019,9 @@ function RoadmapTab({ scanModel = "general" }) {
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [aiRoadmap, setAiRoadmap] = useState(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const loadScans = () => {
     fetch(`${API}/api/scans?${scanModelParam(scanModel)}`)
@@ -7044,6 +7047,23 @@ function RoadmapTab({ scanModel = "general" }) {
     const id = setInterval(loadScans, 8000);
     return () => clearInterval(id);
   }, [scanModel]);
+
+  const generateAiRoadmap = async () => {
+    if (!selectedScanId) return;
+    setIsAiLoading(true);
+    setAiError("");
+    try {
+      const r = await fetch(`${API}/api/scan/${selectedScanId}/roadmap_ai`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Failed to generate AI roadmap");
+      setAiRoadmap(d.ai_roadmap || null);
+    } catch (e) {
+      setAiError(e.message || "Failed to load AI roadmap.");
+      setAiRoadmap(null);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedScanId) {
@@ -7154,6 +7174,12 @@ function RoadmapTab({ scanModel = "general" }) {
               minWidth={280}
             />
             <Btn onClick={loadScans}>REFRESH</Btn>
+            <Btn
+              onClick={generateAiRoadmap}
+              disabled={isAiLoading || !selectedScanId}
+            >
+              {isAiLoading ? "GENERATING AI..." : "GENERATE AI ROADMAP"}
+            </Btn>
           </div>
         </div>
         <div
@@ -7189,6 +7215,18 @@ function RoadmapTab({ scanModel = "general" }) {
             }}
           >
             {loadError}
+          </div>
+        )}
+        {!!aiError && (
+          <div
+            style={{
+              color: C.orange,
+              fontFamily: "JetBrains Mono",
+              fontSize: 11,
+              marginTop: 8,
+            }}
+          >
+            {aiError}
           </div>
         )}
       </Card>
@@ -7227,6 +7265,30 @@ function RoadmapTab({ scanModel = "general" }) {
                 }}
               >
                 No actions generated for this phase yet.
+              </div>
+            )}
+            {aiRoadmap && aiRoadmap[phase] && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 12,
+                  border: `1px solid ${C.blue}40`,
+                  borderRadius: 6,
+                  background: `${C.blue}10`,
+                }}
+              >
+                <div style={{ fontFamily: "Orbitron", color: C.blue, fontSize: 12, marginBottom: 6 }}>
+                  <PressureText glow={C.blue}>AI INSIGHTS</PressureText>
+                </div>
+                <div style={{ color: C.text, fontSize: 13, marginBottom: 4 }}>
+                  <strong style={{ color: C.cyan }}>Recommendation:</strong> {aiRoadmap[phase].ai_recommendation}
+                </div>
+                <div style={{ color: C.text, fontSize: 13, marginBottom: 4 }}>
+                  <strong style={{ color: C.cyan }}>Solution:</strong> {aiRoadmap[phase].ai_solution}
+                </div>
+                <div style={{ color: C.text, fontSize: 13 }}>
+                  <strong style={{ color: C.cyan }}>Providers:</strong> {aiRoadmap[phase].ai_providers}
+                </div>
               </div>
             )}
           </Card>
