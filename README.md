@@ -516,7 +516,7 @@ python scripts/pqc_simulator.py \
 
 This project is proprietary and confidential. Unauthorized copying or redistribution is prohibited.
 
-For licensing inquiries, contact: [your-email@org.com]
+For licensing inquiries, contact: [akulattre@gmail.com]
 
 ---
 
